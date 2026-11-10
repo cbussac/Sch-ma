@@ -28,7 +28,7 @@
     @media print {
       @page { size: A4 landscape; margin: 0; }
       html, body { background: #ffffff !important; width: 100% !important; height: 100% !important; overflow: visible !important; }
-      header, #app-body, #save-modal, #edit-modal, #cartouche-modal, #file-open-input, #toast-box, #drop-overlay { display: none !important; }
+      header, #app-body, #save-modal, #edit-modal, #cartouche-modal, #wire-num-modal, #file-open-input, #toast-box, #drop-overlay { display: none !important; }
       body * { visibility: hidden !important; }
       #print-container, #print-container * { visibility: visible !important; }
       #print-container {
@@ -105,6 +105,7 @@
       <button onclick="rotateSelected()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Pivoter 90° (Clic droit ou R)">🔄 90°</button>
       <button onclick="duplicateSelected()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Dupliquer (Ctrl+D)">📋</button>
       <button onclick="openEditModal()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Propriétés / Repère">🏷️ Repère</button>
+      <button id="btn-wire-num" onclick="handleAutoNumberWires()" oncontextmenu="event.preventDefault(); clearAllWireNumbers();" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-cyan-300 flex items-center gap-1" title="Numérotation automatique des fils par équipotentielle (Clic droit : effacer les numéros)">🔢 Num. Fils</button>
       <button onclick="openCartoucheModal()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Modifier le cartouche">📝 Cartouche</button>
       <button onclick="zoomStep(1.18)" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold">＋</button>
       <button onclick="zoomStep(1/1.18)" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold">－</button>
@@ -258,10 +259,35 @@
     </div>
   </div>
 
+  <!-- Modale Édition Numéro de Fil -->
+  <div id="wire-num-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white">🔢 Numéro du Conducteur — CBUSSAC Schéma</h3>
+        <button onclick="closeWireNumModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Numéro ou repère équipotentiel du fil (ex: 1, 2, L1, Ph1)</label>
+        <input id="inp-wire-num" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-cyan-300 font-bold">
+      </div>
+      <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+        <input id="chk-wire-equip" type="checkbox" checked class="rounded border-slate-700 bg-slate-950 text-blue-600">
+        <span>Appliquer à toute l'équipotentielle connectée</span>
+      </label>
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <div class="flex gap-1.5">
+          <button onclick="resetWireNumPosModal()" type="button" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-amber-300" title="Recentrer le numéro sur le fil">🎯 Réinit. pos.</button>
+          <button onclick="clearAllWireNumbers(); closeWireNumModal();" type="button" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-rose-300" title="Effacer tous les numéros de fils">🧹 Tout effacer</button>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="closeWireNumModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
+          <button onclick="saveWireNumModal()" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">Valider</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 <script>
-/* ============================================================================
-   1. GÉOMÉTRIE & OUTILS GRAPHIQUES
-   ============================================================================ */
 const GRID = 20;
 const snap = v => Math.round(v / GRID) * GRID;
 
@@ -298,11 +324,7 @@ function showToast(msg) {
   toastTimer = setTimeout(() => { box.style.opacity = '0'; }, 2800);
 }
 
-/* ============================================================================
-   2. CATALOGUE NORMALISÉ : SYMBOLES EXACTS DU PDF & DU BÂTIMENT
-   ============================================================================ */
 const SYMBOLS = {
-  // Sectionneur porte-fusibles 3P Q1
   Q_SECT_3P: {
     cat: 'PWR', name: 'Q1 Sectionneur Porte-Fusibles 3P', pref: 'Q', sub: '',
     terms: [
@@ -316,10 +338,8 @@ const SYMBOLS = {
         L(g, px, -40, px, -20);
         L(g, px, 20, px, 40);
         g.restore();
-
         L(g, px - 5, -20, px + 5, -20);
         L(g, px, 20, px - 14, -20);
-
         g.save();
         g.translate(px - 8, -3);
         g.rotate(-0.337);
@@ -329,8 +349,6 @@ const SYMBOLS = {
       DASH(g, [6, 5], () => L(g, -47, 0, 32, 0));
     }
   },
-
-  // Contacteur 3P KM1 / KM2
   KM_CONT_3P: {
     cat: 'PWR', name: 'KM1/KM2 Contacteur 3P', pref: 'KM', sub: '',
     terms: [
@@ -344,18 +362,14 @@ const SYMBOLS = {
         L(g, px, -40, px, -20);
         L(g, px, 20, px, 40);
         g.restore();
-
         g.beginPath();
         g.arc(px, -24.5, 4.5, Math.PI * 0.5, Math.PI * 1.5, false);
         g.stroke();
-
         L(g, px, 20, px - 14, -20);
       });
       DASH(g, [6, 5], () => L(g, -47, 0, 33, 0));
     }
   },
-
-  // Verrouillage mécanique ▽
   VERR_MECA: {
     cat: 'PWR', name: 'Verrouillage Mécanique (▽)', pref: '', sub: '',
     terms: [],
@@ -364,8 +378,6 @@ const SYMBOLS = {
       DASH(g, [3, 3], () => { L(g, -46, 0, -5, 0); L(g, 5, 0, 32, 0); });
     }
   },
-
-  // Relais thermique 3P F1
   F_THERM_3P: {
     cat: 'PWR', name: 'F1 Relais Thermique 3P', pref: 'F', sub: '',
     terms: [
@@ -379,9 +391,7 @@ const SYMBOLS = {
         L(g, px, -40, px, -12);
         L(g, px, 12, px, 40);
         g.restore();
-        POLY(g, [
-          [px, -12], [px + 18, -12], [px + 18, 12], [px, 12]
-        ]);
+        POLY(g, [[px, -12], [px + 18, -12], [px + 18, 12], [px, 12]]);
       });
       DASH(g, [5, 4], () => {
         R(g, -46, -18, 110, 36, null);
@@ -389,8 +399,6 @@ const SYMBOLS = {
       });
     }
   },
-
-  // Moteur asynchrone M1
   M_MOT_3P: {
     cat: 'PWR', name: 'M1 Moteur Asynchrone 3~', pref: 'M', sub: '',
     terms: [
@@ -410,160 +418,134 @@ const SYMBOLS = {
       L(g, -9, 15, 9, 15);
     }
   },
-
-  // Contact thermique NC (95-96)
   F_NC_95_96: {
     cat: 'CMD', name: 'F1 Contact Thermique NC (95-96)', pref: 'F', sub: '',
-    terms: [{ x: 0, y: -40, n: '95' }, { x: 0, y: 40, n: '96' }],
+    terms: [{ x: 0, y: -24, n: '95' }, { x: 0, y: 24, n: '96' }],
     draw(g) {
       g.save();
       g.strokeStyle = '#ef4444';
-      L(g, 0, -40, 0, -20);
-      L(g, 0, 20, 0, 40);
+      L(g, 0, -24, 0, -13);
+      L(g, 0, 13, 0, 24);
       g.restore();
-
-      L(g, 0, -20, 17, -20);
-      L(g, 0, 20, 13, -24);
-      DASH(g, [6, 4], () => L(g, 6.5, 0, 18, 0));
-      POLY(g, [[23, -11], [23, -5], [18, -5], [18, 5], [23, 5], [23, 11]]);
+      L(g, 0, -13, 14, -13);
+      L(g, 0, 13, 11, -16);
+      DASH(g, [5, 3], () => L(g, 5.5, 0, 16, 0));
+      POLY(g, [[21, -9], [21, -4], [16, -4], [16, 4], [21, 4], [21, 9]]);
     }
   },
-
-  // Contact thermique NO (97-98)
   F_NO_97_98: {
     cat: 'CMD', name: 'F1 Contact Thermique NO (97-98)', pref: 'F', sub: '',
-    terms: [{ x: 0, y: -40, n: '97' }, { x: 0, y: 40, n: '98' }],
+    terms: [{ x: 0, y: -24, n: '97' }, { x: 0, y: 24, n: '98' }],
     draw(g) {
       g.save();
       g.strokeStyle = '#ef4444';
-      L(g, 0, -40, 0, -20);
-      L(g, 0, 20, 0, 40);
+      L(g, 0, -24, 0, -13);
+      L(g, 0, 13, 0, 24);
       g.restore();
-
-      L(g, 0, 20, -14, -20);
-      DASH(g, [6, 4], () => L(g, -7, 0, 7, 0));
-      POLY(g, [[12, -11], [12, -5], [7, -5], [7, 5], [12, 5], [12, 11]]);
+      L(g, 0, 13, -11, -13);
+      DASH(g, [5, 3], () => L(g, -5.5, 0, 7, 0));
+      POLY(g, [[12, -9], [12, -4], [7, -4], [7, 4], [12, 4], [12, 9]]);
     }
   },
-
-  // Pré-coupure sectionneur -Q1
   Q_PRE_NO: {
     cat: 'CMD', name: '-Q1 Contact Pré-coupure NO', pref: '-Q', sub: '',
-    terms: [{ x: 0, y: -40, n: '' }, { x: 0, y: 40, n: '' }],
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
     draw(g) {
-      L(g, 0, -40, 0, -14);
-      L(g, 0, 40, 0, 14);
-      L(g, 0, 14, -12, -13);
+      L(g, 0, -24, 0, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, -10, -10);
     }
   },
-
-  // Bouton Arrêt NC S1
   S_BP_NC: {
     cat: 'CMD', name: 'S1 Bouton-Poussoir Arrêt NC', pref: 'S', sub: '',
-    terms: [{ x: 0, y: -40, n: '' }, { x: 0, y: 40, n: '' }],
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
     draw(g) {
-      L(g, 0, -40, 0, -14);
-      L(g, 0, -14, 9, -14);
-      L(g, 0, 40, 0, 14);
-      L(g, 0, 14, 7, -17);
-      DASH(g, [2.5, 2.5], () => L(g, 3, 0, -18, 0));
-      POLY(g, [[-14, -7], [-18, -7], [-18, 7], [-14, 7]]);
+      L(g, 0, -24, 0, -11);
+      L(g, 0, -11, 8, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, 6, -14);
+      DASH(g, [2.5, 2.5], () => L(g, 3, 0, -16, 0));
+      POLY(g, [[-12, -6], [-16, -6], [-16, 6], [-12, 6]]);
     }
   },
-
-  // Bouton Marche NO S2/S3
   S_BP_NO: {
     cat: 'CMD', name: 'S2/S3 Bouton-Poussoir Marche NO', pref: 'S', sub: '',
-    terms: [{ x: 0, y: -40, n: '' }, { x: 0, y: 40, n: '' }],
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
     draw(g) {
-      L(g, 0, -40, 0, -14);
-      L(g, 0, 40, 0, 14);
-      L(g, 0, 14, -12, -13);
-      DASH(g, [2.5, 2.5], () => L(g, -6, 0, -20, 0));
-      POLY(g, [[-16, -7], [-20, -7], [-20, 7], [-16, 7]]);
+      L(g, 0, -24, 0, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, -10, -10);
+      DASH(g, [2.5, 2.5], () => L(g, -5, 0, -18, 0));
+      POLY(g, [[-14, -6], [-18, -6], [-18, 6], [-14, 6]]);
     }
   },
-
-  // Arrêt d'urgence coup de poing NC S0
   S_AU_NC: {
     cat: 'CMD', name: 'S0 Arrêt d\'Urgence Coup de Poing NC', pref: 'S', sub: 'AU',
-    terms: [{ x: 0, y: -40, n: '11' }, { x: 0, y: 40, n: '12' }],
+    terms: [{ x: 0, y: -24, n: '11' }, { x: 0, y: 24, n: '12' }],
     draw(g) {
-      L(g, 0, -40, 0, -14);
-      L(g, 0, -14, 9, -14);
-      L(g, 0, 40, 0, 14);
-      L(g, 0, 14, 7, -17);
-      DASH(g, [2.5, 2.5], () => L(g, 3, 0, -22, 0));
-      POLY(g, [[-11, 0], [-14, -6], [-17, 0]]);
+      L(g, 0, -24, 0, -11);
+      L(g, 0, -11, 8, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, 6, -14);
+      DASH(g, [2.5, 2.5], () => L(g, 3, 0, -20, 0));
+      POLY(g, [[-10, 0], [-13, -5], [-16, 0]]);
       g.beginPath();
-      g.arc(-22, 0, 8, Math.PI * 0.5, Math.PI * 1.5, false);
+      g.arc(-20, 0, 7, Math.PI * 0.5, Math.PI * 1.5, false);
       g.closePath();
       g.stroke();
     }
   },
-
-  // Contact auxiliaire NO KM1/KM2
   KM_NO: {
     cat: 'CMD', name: 'KM1/KM2 Contact NO (Maintien)', pref: 'KM', sub: '',
-    terms: [{ x: 0, y: -40, n: '' }, { x: 0, y: 40, n: '' }],
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
     draw(g) {
-      L(g, 0, -40, 0, -14);
-      L(g, 0, 40, 0, 14);
-      L(g, 0, 14, -12, -13);
+      L(g, 0, -24, 0, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, -10, -10);
     }
   },
-
-  // Contact auxiliaire NC KM1/KM2
   KM_NC: {
     cat: 'CMD', name: 'KM1/KM2 Contact NC (Verrouillage)', pref: 'KM', sub: '',
-    terms: [{ x: 0, y: -40, n: '' }, { x: 0, y: 40, n: '' }],
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
     draw(g) {
-      L(g, 0, -40, 0, -14);
-      L(g, 0, -14, 9, -14);
-      L(g, 0, 40, 0, 14);
-      L(g, 0, 14, 7, -17);
+      L(g, 0, -24, 0, -11);
+      L(g, 0, -11, 8, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, 6, -14);
     }
   },
-
-  // Bobine de contacteur KM1/KM2
   KM_BOBINE: {
     cat: 'CMD', name: 'KM1/KM2 Bobine (A1-A2)', pref: 'KM', sub: '',
-    terms: [{ x: 0, y: -40, n: 'A1' }, { x: 0, y: 40, n: 'A2' }],
+    terms: [{ x: 0, y: -22, n: 'A1' }, { x: 0, y: 22, n: 'A2' }],
     draw(g) {
-      L(g, 0, -40, 0, -12);
-      L(g, 0, 12, 0, 40);
-      R(g, -16, -12, 32, 24, '#ffffff');
+      L(g, 0, -22, 0, -11);
+      L(g, 0, 11, 0, 22);
+      R(g, -15, -11, 30, 22, '#ffffff');
     }
   },
-
-  // Voyant lumineux H1/H2
   H_VOYANT: {
     cat: 'CMD', name: 'H1/H2 Voyant Lumineux (X1-X2)', pref: 'H', sub: '',
-    terms: [{ x: 0, y: -40, n: 'X1' }, { x: 0, y: 40, n: 'X2' }],
+    terms: [{ x: 0, y: -22, n: 'X1' }, { x: 0, y: 22, n: 'X2' }],
     draw(g) {
-      L(g, 0, -40, 0, -13);
-      L(g, 0, 13, 0, 40);
-      C(g, 0, 0, 13, '#ffffff');
-      L(g, -9, -9, 9, 9);
-      L(g, 9, -9, -9, 9);
+      L(g, 0, -22, 0, -12);
+      L(g, 0, 12, 0, 22);
+      C(g, 0, 0, 12, '#ffffff');
+      L(g, -8.5, -8.5, 8.5, 8.5);
+      L(g, 8.5, -8.5, -8.5, 8.5);
     }
   },
-
-  // Bornes de raccordement conformes au PDF
   BORNE: {
     cat: 'BORN', name: 'Borne (X1..X12 / Y1..Y6 / Xpe)', pref: 'X', sub: '',
-    terms: [{ x: 0, y: -12, n: '' }, { x: 0, y: 12, n: '' }],
+    terms: [{ x: 0, y: -8, n: '' }, { x: 0, y: 8, n: '' }],
     draw(g) {
-      L(g, 0, -12, 0, -6);
-      L(g, 0, 6, 0, 12);
-      C(g, 0, 0, 6, '#ffffff');
-      L(g, -9, -9, 9, 9);
-      R(g, -3, -15, 6, 6, '#ef4444');
-      R(g, -3, 9, 6, 6, '#ef4444');
+      L(g, 0, -8, 0, -5);
+      L(g, 0, 5, 0, 8);
+      C(g, 0, 0, 5, '#ffffff');
+      L(g, -7.5, -7.5, 7.5, 7.5);
+      R(g, -2.5, -10.5, 5, 5, '#ef4444');
+      R(g, -2.5, 5.5, 5, 5, '#ef4444');
     }
   },
-
-  // Noeud de connexion
   PT_CONN: {
     cat: 'BORN', name: 'Noeud de Connexion', pref: '', sub: '',
     terms: [{ x: 0, y: 0, n: '' }],
@@ -571,8 +553,6 @@ const SYMBOLS = {
       C(g, 0, 0, 2.5, '#0f172a');
     }
   },
-
-  // Disjoncteur différentiel 30mA
   DDR_30MA: {
     cat: 'DOM', name: 'Différentiel 30mA (DDR)', pref: 'Q', sub: '40A 30mA',
     terms: [
@@ -593,8 +573,6 @@ const SYMBOLS = {
       TXT(g, 'T', -30, 0, 8, '#0f172a');
     }
   },
-
-  // Disjoncteur 1P+N
   DISJ_1PN: {
     cat: 'DOM', name: 'Disjoncteur 1P+N (C16 / C20)', pref: 'Q', sub: '16A',
     terms: [
@@ -612,8 +590,6 @@ const SYMBOLS = {
       DASH(g, [3, 3], () => L(g, -26, 0, 14, 0));
     }
   },
-
-  // Va-et-Vient domestique
   DOM_VV: {
     cat: 'DOM', name: 'Interrupteur Va-et-Vient', pref: 'S', sub: '',
     terms: [{ x: 0, y: -40, n: 'L' }, { x: -20, y: 40, n: '1' }, { x: 20, y: 40, n: '2' }],
@@ -628,8 +604,6 @@ const SYMBOLS = {
       L(g, -26, -6, -26, 8);
     }
   },
-
-  // Prise 2P+T
   DOM_PRISE: {
     cat: 'DOM', name: 'Prise de Courant 2P+T 16A', pref: 'PC', sub: '16A',
     terms: [{ x: -20, y: -40, n: 'N' }, { x: 0, y: -40, n: 'PE' }, { x: 20, y: -40, n: 'L' }],
@@ -654,9 +628,6 @@ const WIRE_STYLES = {
   MECH:    { col: '#334155', w: 1.3, d: [3, 3] }
 };
 
-/* ============================================================================
-   3. ÉTAT DE L'APPLICATION & HISTORIQUE (UNDO / REDO)
-   ============================================================================ */
 const canvas = document.getElementById('main-canvas');
 const ctx = canvas.getContext('2d');
 const AUTOSAVE_KEY = 'cbussac_schema_autosave_v3';
@@ -684,6 +655,8 @@ let state = {
   hoverLabel: null,
   hoverTermLabel: null,
   hoverWireSeg: null,
+  hoverWireNum: null,
+  showWireNumbers: false,
   mouseW: { x: 0, y: 0 },
   presetName: 'pdf_2sens',
   currentFileName: 'demarrage_direct_2_sens',
@@ -696,6 +669,17 @@ let state = {
   }
 };
 
+function updateWireNumButtonUI() {
+  const btn = document.getElementById('btn-wire-num');
+  if (!btn) return;
+  const hasNums = state.showWireNumbers && state.wires.some(w => w.num !== undefined && w.num !== null && String(w.num) !== '');
+  if (hasNums) {
+    btn.classList.add('tool-btn', 'active');
+  } else {
+    btn.classList.remove('active');
+  }
+}
+
 function updateFileBadge() {
   const el = document.getElementById('file-name-text');
   if (el) el.textContent = (state.currentFileName || 'schema') + '.cbs.json';
@@ -705,10 +689,11 @@ function saveToLocalStorage() {
   try {
     const payload = {
       app: 'CBUSSAC Schéma',
-      version: '3.0',
+      version: '3.1',
       savedAt: new Date().toISOString(),
       presetName: state.presetName,
       currentFileName: state.currentFileName,
+      showWireNumbers: state.showWireNumbers,
       cartouche: state.cartouche,
       comps: state.comps,
       wires: state.wires
@@ -722,6 +707,7 @@ function createSnapshot(actionLabel = '') {
     actionLabel,
     presetName: state.presetName,
     currentFileName: state.currentFileName,
+    showWireNumbers: state.showWireNumbers,
     cartouche: JSON.parse(JSON.stringify(state.cartouche)),
     comps: JSON.parse(JSON.stringify(state.comps)),
     wires: JSON.parse(JSON.stringify(state.wires)),
@@ -741,6 +727,7 @@ function restoreSnapshot(snapObj) {
   if (!snapObj) return;
   state.presetName = snapObj.presetName || 'pdf_2sens';
   state.currentFileName = snapObj.currentFileName || 'schema_cbussac';
+  state.showWireNumbers = Boolean(snapObj.showWireNumbers);
   state.cartouche = JSON.parse(JSON.stringify(snapObj.cartouche));
   state.comps = JSON.parse(JSON.stringify(snapObj.comps));
   state.wires = JSON.parse(JSON.stringify(snapObj.wires));
@@ -748,6 +735,7 @@ function restoreSnapshot(snapObj) {
   state.selWire = null;
   state.wireStart = null;
   updateFileBadge();
+  updateWireNumButtonUI();
   drawAll();
   saveToLocalStorage();
 }
@@ -785,9 +773,6 @@ function updateHistoryButtons(msg = null) {
   }
 }
 
-/* ============================================================================
-   4. ENREGISTREMENT & CHARGEMENT DE FICHIER (.CBS.JSON)
-   ============================================================================ */
 function sanitizeFileName(str) {
   return (str || 'schema_cbussac')
     .toLowerCase()
@@ -821,10 +806,11 @@ async function confirmSaveProject() {
   const fileName = `${baseName}.cbs.json`;
   const payload = JSON.stringify({
     app: 'CBUSSAC Schéma',
-    version: '3.0',
+    version: '3.1',
     savedAt: new Date().toISOString(),
     presetName: state.presetName,
     currentFileName: state.currentFileName,
+    showWireNumbers: state.showWireNumbers,
     cartouche: state.cartouche,
     comps: state.comps,
     wires: state.wires
@@ -884,7 +870,7 @@ function readAndLoadFile(file) {
       data.currentFileName = cleanName;
       loadProjectObject(data, `📂 Schéma « ${file.name} » ouvert avec succès`);
     } catch (err) {
-      alert('Erreur : Ce fichier n\'est pas un schéma CBUSSAC Schéma (.json) valide.');
+      showToast('⚠️ Ce fichier n\'est pas un schéma CBUSSAC Schéma (.json) valide.');
     }
   };
   reader.readAsText(file);
@@ -892,7 +878,7 @@ function readAndLoadFile(file) {
 
 function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
   if (!data || !Array.isArray(data.comps) || !Array.isArray(data.wires)) {
-    alert('Format de schéma invalide : structure de symboles ou fils non reconnue.');
+    showToast('⚠️ Format de schéma invalide.');
     return;
   }
 
@@ -915,8 +901,8 @@ function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
     .map(c => ({
       id: c.id || ('c' + Math.random().toString(36).slice(2, 8)),
       type: c.type,
-      x: snap(Number(c.x) || 200),
-      y: snap(Number(c.y) || 200),
+      x: Math.round(Number(c.x) || 200),
+      y: Math.round(Number(c.y) || 200),
       rot: Number(c.rot) || 0,
       label: c.label !== undefined ? String(c.label) : '',
       sub: c.sub !== undefined ? String(c.sub) : '',
@@ -937,13 +923,21 @@ function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
       t2: Number(w.t2) || 0,
       style: WIRE_STYLES[w.style] ? w.style : 'CMD',
       midY: w.midY !== undefined ? w.midY : null,
-      midX: w.midX !== undefined ? w.midX : null
+      midX: w.midX !== undefined ? w.midX : null,
+      num: w.num !== undefined ? w.num : null,
+      numDx: typeof w.numDx === 'number' ? w.numDx : null,
+      numDy: typeof w.numDy === 'number' ? w.numDy : null
     }));
+
+  state.showWireNumbers = data.showWireNumbers !== undefined
+    ? Boolean(data.showWireNumbers)
+    : state.wires.some(w => w.num !== null && w.num !== undefined && String(w.num) !== '');
 
   state.selComp = null;
   state.selWire = null;
   state.wireStart = null;
   updateFileBadge();
+  updateWireNumButtonUI();
   fitSheet();
   saveToLocalStorage();
   showToast(toastMessage);
@@ -977,15 +971,13 @@ canvasWrapEl.addEventListener('drop', e => {
   if (file) readAndLoadFile(file);
 });
 
-/* ============================================================================
-   5. CALCUL DES POSITIONS, FILTRES ET RENDU GRAPHIQUE
-   ============================================================================ */
 let viewW = 1000, viewH = 650;
 let isPanning = false, panOrigin = { x: 0, y: 0 };
 let dragComp = null, dragOff = { x: 0, y: 0 }, dragStartPos = { x: 0, y: 0 };
 let dragLabelComp = null, dragLabelOff = { x: 0, y: 0 }, dragLabelStart = { dx: 0, dy: 0 };
 let dragTermLabel = null;
 let dragWire = null;
+let dragWireNum = null;
 
 function toWorld(sx, sy) {
   return { x: (sx - state.panX) / state.zoom, y: (sy - state.panY) / state.zoom };
@@ -1026,18 +1018,22 @@ function getLabelBox(c) {
 }
 
 function getDefaultTermLabelSpec(c, t) {
-  if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'KM_CONT_3P' || c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98') {
+  if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'KM_CONT_3P') {
     const dy = t.y < c.y ? 12 : -12;
     return { dx: 5, dy, sz: 8.5, align: 'left' };
+  }
+  if (c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98') {
+    const dy = t.y < c.y ? 7 : -7;
+    return { dx: 5, dy, sz: 8, align: 'left' };
   }
   if (c.type === 'M_MOT_3P') {
     return { dx: -4, dy: 11, sz: 8, align: 'right' };
   }
   if (c.type === 'KM_BOBINE' || c.type === 'H_VOYANT') {
-    const dy = t.y < c.y ? 16 : -16;
-    return { dx: 4, dy, sz: 7.5, align: 'left' };
+    const dy = t.y < c.y ? 6 : -6;
+    return { dx: 5, dy, sz: 7.5, align: 'left' };
   }
-  const dy = t.y < c.y ? 14 : -14;
+  const dy = t.y < c.y ? 10 : -10;
   return { dx: -4, dy, sz: 7.5, align: 'right' };
 }
 
@@ -1074,7 +1070,7 @@ function addComp(type, x, y, label, sub = null, rot = 0, customTerms = null) {
   const def = SYMBOLS[type];
   const c = {
     id: 'c' + Math.random().toString(36).slice(2, 8),
-    type, x: snap(x), y: snap(y), rot,
+    type, x: Math.round(x), y: Math.round(y), rot,
     label: label !== undefined ? label : (def.pref ? (def.pref + (state.comps.filter(k => SYMBOLS[k.type]?.pref === def.pref).length + 1)) : ''),
     sub: sub !== null ? sub : def.sub,
     customTerms: customTerms || null,
@@ -1135,12 +1131,353 @@ function computeSmartMidY(c1, t1Idx, c2, t2Idx, requestedMidY = null) {
 
 function addWire(c1, t1, c2, t2, style = 'CMD', midY = null, midX = null) {
   const finalMidY = (midX !== null && midX !== undefined) ? null : computeSmartMidY(c1, t1, c2, t2, midY);
-  state.wires.push({
+  const newW = {
     id: 'w' + Math.random().toString(36).slice(2, 8),
     c1: c1.id, t1, c2: c2.id, t2, style,
     midY: finalMidY,
-    midX: midX !== undefined ? midX : null
+    midX: midX !== undefined ? midX : null,
+    num: null,
+    numDx: null,
+    numDy: null
+  };
+  state.wires.push(newW);
+  if (state.showWireNumbers) {
+    computeEquipotentialWireNumbers();
+  }
+  return newW;
+}
+
+function getEquipotentialWires(seedWire) {
+  if (!seedWire) return [];
+  const adj = buildWireAdjacencyMap();
+  const visited = new Set([seedWire.id]);
+  const queue = [seedWire];
+  const result = [seedWire];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const neighbors = adj.get(cur.id) || [];
+    for (const nb of neighbors) {
+      if (!visited.has(nb.id)) {
+        visited.add(nb.id);
+        result.push(nb);
+        queue.push(nb);
+      }
+    }
+  }
+  return result;
+}
+
+function buildWireAdjacencyMap() {
+  const adj = new Map();
+  const elecWires = state.wires.filter(w => w.style !== 'MECH');
+  elecWires.forEach(w => adj.set(w.id, []));
+
+  const wireMeta = elecWires.map(w => {
+    const pts = wirePoints(w);
+    return { w, pts };
   });
+
+  const passThroughComps = state.comps
+    .filter(c => c.type === 'BORNE' || c.type === 'PT_CONN')
+    .map(c => ({ id: c.id, terms: getTerms(c) }));
+
+  for (let i = 0; i < wireMeta.length; i++) {
+    for (let j = i + 1; j < wireMeta.length; j++) {
+      const A = wireMeta[i], B = wireMeta[j];
+      let connected = false;
+
+      if ((A.w.c1 === B.w.c1 && A.w.t1 === B.w.t1) ||
+          (A.w.c1 === B.w.c2 && A.w.t1 === B.w.t2) ||
+          (A.w.c2 === B.w.c1 && A.w.t2 === B.w.t1) ||
+          (A.w.c2 === B.w.c2 && A.w.t2 === B.w.t2)) {
+        connected = true;
+      }
+
+      if (!connected) {
+        const compsA = [A.w.c1, A.w.c2];
+        const compsB = [B.w.c1, B.w.c2];
+        for (const cid of compsA) {
+          if (compsB.includes(cid)) {
+            const sc = state.comps.find(c => c.id === cid);
+            if (sc && (sc.type === 'PT_CONN' || sc.type === 'BORNE')) {
+              connected = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!connected && A.pts.length >= 2 && B.pts.length >= 2) {
+        const endsA = [A.pts[0], A.pts[A.pts.length - 1]];
+        const endsB = [B.pts[0], B.pts[B.pts.length - 1]];
+        for (const ptc of passThroughComps) {
+          const touchA = endsA.some(([ax, ay]) => ptc.terms.some(t => Math.hypot(t.x - ax, t.y - ay) <= 3));
+          const touchB = endsB.some(([bx, by]) => ptc.terms.some(t => Math.hypot(t.x - bx, t.y - by) <= 3));
+          if (touchA && touchB) {
+            connected = true;
+            break;
+          }
+        }
+      }
+
+      if (!connected && A.pts.length >= 2 && B.pts.length >= 2) {
+        const endsA = [A.pts[0], A.pts[A.pts.length - 1]];
+        const endsB = [B.pts[0], B.pts[B.pts.length - 1]];
+        for (const [px, py] of endsA) {
+          for (let s = 0; s < B.pts.length - 1; s++) {
+            if (distToSegment(px, py, B.pts[s][0], B.pts[s][1], B.pts[s + 1][0], B.pts[s + 1][1]) <= 1.5) {
+              connected = true; break;
+            }
+          }
+          if (connected) break;
+        }
+        if (!connected) {
+          for (const [px, py] of endsB) {
+            for (let s = 0; s < A.pts.length - 1; s++) {
+              if (distToSegment(px, py, A.pts[s][0], A.pts[s][1], A.pts[s + 1][0], A.pts[s + 1][1]) <= 1.5) {
+                connected = true; break;
+              }
+            }
+            if (connected) break;
+          }
+        }
+      }
+
+      if (connected) {
+        adj.get(A.w.id).push(B.w);
+        adj.get(B.w.id).push(A.w);
+      }
+    }
+  }
+  return adj;
+}
+
+function computeEquipotentialWireNumbers() {
+  const elecWires = state.wires.filter(w => w.style !== 'MECH');
+  state.wires.forEach(w => {
+    if (w.style === 'MECH') w.num = null;
+  });
+  if (elecWires.length === 0) return 0;
+
+  const adj = buildWireAdjacencyMap();
+  const visited = new Set();
+  const groups = [];
+
+  for (const w of elecWires) {
+    if (visited.has(w.id)) continue;
+    const comp = [];
+    const queue = [w];
+    visited.add(w.id);
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      comp.push(cur);
+      const neighbors = adj.get(cur.id) || [];
+      for (const nb of neighbors) {
+        if (!visited.has(nb.id)) {
+          visited.add(nb.id);
+          queue.push(nb);
+        }
+      }
+    }
+
+    let minX = Infinity, minY = Infinity;
+    let isPower = false;
+    comp.forEach(cw => {
+      if (cw.style === 'PHASE' || cw.style === 'NEUTRAL' || cw.style === 'PE') isPower = true;
+      wirePoints(cw).forEach(([px, py]) => {
+        if (py < minY - 4 || (Math.abs(py - minY) <= 4 && px < minX)) {
+          minY = py;
+          minX = px;
+        }
+      });
+    });
+
+    groups.push({ wires: comp, minX, minY, isPower });
+  }
+
+  groups.sort((a, b) => {
+    if (a.isPower !== b.isPower) return a.isPower ? -1 : 1;
+    if (Math.abs(a.minY - b.minY) > 14) return a.minY - b.minY;
+    return a.minX - b.minX;
+  });
+
+  let numCounter = 1;
+  groups.forEach(g => {
+    const isAllPE = g.wires.every(w => w.style === 'PE');
+    const label = isAllPE ? 'PE' : String(numCounter++);
+    g.wires.forEach(w => {
+      w.num = label;
+    });
+  });
+
+  return groups.length;
+}
+
+function handleAutoNumberWires() {
+  if (state.wires.length === 0) {
+    showToast('⚠️ Aucun conducteur à numéroter sur le schéma');
+    return;
+  }
+  const alreadyNumbered = state.wires.some(w => w.num !== null && w.num !== undefined && String(w.num) !== '');
+  if (!state.showWireNumbers) {
+    pushHistory('Numérotation automatique des fils');
+    state.showWireNumbers = true;
+    const count = computeEquipotentialWireNumbers();
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+    showToast(`🔢 ${count} équipotentielle(s) numérotée(s) automatiquement`);
+  } else if (alreadyNumbered) {
+    pushHistory('Masquage numéros des fils');
+    state.showWireNumbers = false;
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+    showToast('👁️ Numérotation des fils masquée (cliquez à nouveau pour afficher)');
+  } else {
+    pushHistory('Numérotation automatique des fils');
+    const count = computeEquipotentialWireNumbers();
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+    showToast(`🔢 ${count} équipotentielle(s) numérotée(s)`);
+  }
+}
+
+function clearAllWireNumbers() {
+  if (!state.wires.some(w => w.num !== null && w.num !== undefined)) return;
+  pushHistory('Effacement des numéros de fils');
+  state.wires.forEach(w => {
+    w.num = null;
+    w.numDx = null;
+    w.numDy = null;
+  });
+  state.showWireNumbers = false;
+  updateWireNumButtonUI();
+  drawAll();
+  saveToLocalStorage();
+  showToast('🧹 Numérotation des fils effacée');
+}
+
+function segmentHitsRect(x1, y1, x2, y2, rx1, ry1, rx2, ry2) {
+  if (Math.max(x1, x2) < rx1 || Math.min(x1, x2) > rx2 || Math.max(y1, y2) < ry1 || Math.min(y1, y2) > ry2) {
+    return false;
+  }
+  if (x1 === x2 || y1 === y2) return true;
+  const cx = (rx1 + rx2) / 2, cy = (ry1 + ry2) / 2;
+  return distToSegment(cx, cy, x1, y1, x2, y2) <= Math.hypot(rx2 - rx1, ry2 - ry1) / 2;
+}
+
+function getWireNumBox(w) {
+  if (!state.showWireNumbers || !w || w.num === null || w.num === undefined || String(w.num).trim() === '') return null;
+  const pts = wirePoints(w);
+  if (pts.length < 2) return null;
+
+  const s = String(w.num);
+  const bw = Math.max(10, s.length * 5.4 + 3);
+  const bh = 10;
+
+  let bestIdx = 0, bestLen = -1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    if (len > bestLen) {
+      bestLen = len;
+      bestIdx = i;
+    }
+  }
+  if (bestLen < 2) return null;
+
+  const refP1 = pts[bestIdx], refP2 = pts[bestIdx + 1];
+  const baseX = (refP1[0] + refP2[0]) / 2;
+  const baseY = (refP1[1] + refP2[1]) / 2;
+
+  if (typeof w.numDx === 'number' && typeof w.numDy === 'number') {
+    const x = baseX + w.numDx;
+    const y = baseY + w.numDy;
+    return {
+      x, y, baseX, baseY, dx: w.numDx, dy: w.numDy,
+      bx: x - bw / 2, by: y - bh / 2, bw, bh, text: s
+    };
+  }
+
+  const allSegs = [];
+  for (const ow of state.wires) {
+    const op = wirePoints(ow);
+    for (let i = 0; i < op.length - 1; i++) {
+      if (Math.hypot(op[i + 1][0] - op[i][0], op[i + 1][1] - op[i][1]) >= 1) {
+        allSegs.push([op[i][0], op[i][1], op[i + 1][0], op[i + 1][1]]);
+      }
+    }
+  }
+
+  const fracs = [0.5, 0.36, 0.64, 0.26, 0.74, 0.42, 0.58];
+  let bestCand = null;
+  let bestScore = Infinity;
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p1 = pts[i], p2 = pts[i + 1];
+    const segLen = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    if (segLen < 2) continue;
+    const isHoriz = Math.abs(p2[0] - p1[0]) >= Math.abs(p2[1] - p1[1]);
+
+    const perpOffsets = isHoriz
+      ? [{ ox: 0, oy: -9, pref: 0 }, { ox: 0, oy: 10, pref: 4 }]
+      : [{ ox: -(bw / 2 + 5.5), oy: 0, pref: 0 }, { ox: (bw / 2 + 5.5), oy: 0, pref: 4 }];
+
+    for (const f of fracs) {
+      const sx = p1[0] + (p2[0] - p1[0]) * f;
+      const sy = p1[1] + (p2[1] - p1[1]) * f;
+
+      for (const po of perpOffsets) {
+        const cx = sx + po.ox;
+        const cy = sy + po.oy;
+        const rx1 = cx - bw / 2 - 2;
+        const ry1 = cy - bh / 2 - 1.5;
+        const rx2 = cx + bw / 2 + 2;
+        const ry2 = cy + bh / 2 + 1.5;
+
+        let score = po.pref + Math.abs(f - 0.5) * 35 - Math.min(segLen, 70) * 0.4;
+
+        for (let k = 0; k < allSegs.length; k++) {
+          const sg = allSegs[k];
+          if (segmentHitsRect(sg[0], sg[1], sg[2], sg[3], rx1, ry1, rx2, ry2)) {
+            score += 50000;
+          }
+        }
+
+        for (let k = 0; k < state.comps.length; k++) {
+          const c = state.comps[k];
+          if (c.type === 'BORNE' && Math.hypot(c.x - cx, c.y - cy) < 12) score += 8000;
+          else if (c.type !== 'PT_CONN' && c.type !== 'BORNE' && Math.abs(c.x - cx) < 22 && Math.abs(c.y - cy) < 22) score += 8000;
+          const lb = getLabelBox(c);
+          if (lb && !(rx2 < lb.bx || rx1 > lb.bx + lb.bw || ry2 < lb.by || ry1 > lb.by + lb.bh)) {
+            score += 6000;
+          }
+        }
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestCand = { x: cx, y: cy };
+        }
+      }
+    }
+  }
+
+  const finalX = bestCand ? bestCand.x : (baseX - (bw / 2 + 6));
+  const finalY = bestCand ? bestCand.y : (baseY - 9);
+  return {
+    x: finalX,
+    y: finalY,
+    baseX,
+    baseY,
+    dx: finalX - baseX,
+    dy: finalY - baseY,
+    bx: finalX - bw / 2,
+    by: finalY - bh / 2,
+    bw,
+    bh,
+    text: s
+  };
 }
 
 function wirePoints(w) {
@@ -1161,8 +1498,8 @@ function wirePoints(w) {
   return [[t1.x, t1.y], [t1.x, my], [t2.x, my], [t2.x, t2.y]];
 }
 
-function drawAll() {
-  const dpr = window.devicePixelRatio || 1;
+function drawAll(overrideDpr = null) {
+  const dpr = overrideDpr || window.devicePixelRatio || 1;
   if (!Number.isFinite(state.zoom) || state.zoom < 0.2) state.zoom = 0.85;
   if (!Number.isFinite(state.panX)) state.panX = 20;
   if (!Number.isFinite(state.panY)) state.panY = 15;
@@ -1184,7 +1521,6 @@ function drawAll() {
     for (let y = 40; y <= SH - 80; y += GRID) ctx.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
   }
 
-  // Cadre normalisé WinRelais
   ctx.strokeStyle = '#0f172a';
   ctx.lineWidth = 1.4;
   ctx.strokeRect(16, 16, SW - 32, SH - 32);
@@ -1210,7 +1546,6 @@ function drawAll() {
     TXT(ctx, String(r + 1), SW - 25, ry + rowH / 2, 9, '#0f172a');
   }
 
-  // Cartouche normalisé
   const cy = SH - 60;
   L(ctx, 16, cy, SW - 16, cy);
   L(ctx, 260, cy, 260, SH - 16);
@@ -1237,7 +1572,6 @@ function drawAll() {
     TXT(ctx, '24V', 658, 60, 8.5, '#0f172a', 'right');
   }
 
-  // Rendu des conducteurs et des points de dérivation
   const nodeMap = new Map();
   const allSegments = [];
   const markNode = (x, y, col, weight = 1) => {
@@ -1297,7 +1631,32 @@ function drawAll() {
     if (nd.c >= 3) C(ctx, nd.x, nd.y, 3, nd.col);
   });
 
-  // Aperçu du fil en cours de tracé
+  if (state.showWireNumbers) {
+    state.wires.forEach(w => {
+      const nbox = getWireNumBox(w);
+      if (!nbox) return;
+      const isHov = (state.hoverWireNum === w) || (dragWireNum && dragWireNum.wire === w) || (state.selWire === w);
+      if (isHov) {
+        ctx.save();
+        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = '#f59e0b';
+        DASH(ctx, [2, 2], () => R(ctx, nbox.bx, nbox.by, nbox.bw, nbox.bh, 'rgba(245,158,11,0.14)'));
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.font = 'bold 8.5px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(nbox.text, nbox.x, nbox.y);
+      ctx.fillStyle = isHov ? '#b45309' : '#1d4ed8';
+      ctx.fillText(nbox.text, nbox.x, nbox.y);
+      ctx.restore();
+    });
+  }
+
   if (state.tool === 'wire' && state.wireStart) {
     const st = WIRE_STYLES[state.wireType] || WIRE_STYLES.CMD;
     const tx = state.hoverTerm ? state.hoverTerm.x : snap(state.mouseW.x);
@@ -1309,17 +1668,14 @@ function drawAll() {
     });
   }
 
-  // Dessin des composants
   state.comps.forEach(c => drawSingleComp(c, false));
 
-  // Fantôme de placement
   if (state.tool === 'place' && state.placeType) {
     ctx.save(); ctx.globalAlpha = 0.55;
     drawSingleComp({ type: state.placeType, x: snap(state.mouseW.x), y: snap(state.mouseW.y), rot: 0, label: '', sub: '' }, true);
     ctx.restore();
   }
 
-  // Halo de survol de borne
   if (state.hoverTerm) {
     ctx.save(); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2;
     C(ctx, state.hoverTerm.x, state.hoverTerm.y, 7, 'rgba(59,130,246,0.22)');
@@ -1363,7 +1719,6 @@ function drawSingleComp(c, isGhost) {
 
   if (isGhost || c.type === 'PT_CONN') return;
 
-  // Repère normalisé (librement déplaçable)
   const lbox = getLabelBox(c);
   if (lbox) {
     const isHoverLbl = (state.hoverLabel === c || dragLabelComp === c);
@@ -1383,7 +1738,6 @@ function drawSingleComp(c, isGhost) {
     }
   }
 
-  // Tiges et numéros de bornes
   getTerms(c).forEach(t => {
     if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'KM_CONT_3P' || c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98' || c.type === 'BORNE') {
       ctx.save(); ctx.strokeStyle = '#ef4444';
@@ -1454,9 +1808,6 @@ function renderLibrary() {
   });
 }
 
-/* ============================================================================
-   6. GESTION DES INTERACTIONS SOURIS, TACTILES & SUPPRESSION IMMÉDIATE
-   ============================================================================ */
 function findTermAt(wx, wy, rad = 13) {
   for (const c of state.comps) {
     for (const t of getTerms(c)) {
@@ -1529,6 +1880,19 @@ function findWireSegmentAt(wx, wy, tol = 8) {
   return null;
 }
 
+function findWireNumAt(wx, wy) {
+  if (!state.showWireNumbers) return null;
+  for (let i = state.wires.length - 1; i >= 0; i--) {
+    const w = state.wires[i];
+    const b = getWireNumBox(w);
+    if (!b) continue;
+    if (wx >= b.bx - 2 && wx <= b.bx + b.bw + 2 && wy >= b.by - 2 && wy <= b.by + b.bh + 2) {
+      return w;
+    }
+  }
+  return null;
+}
+
 function onPointerDown(sx, sy, btn = 0) {
   const w = toWorld(sx, sy);
   state.mouseW = w;
@@ -1536,7 +1900,6 @@ function onPointerDown(sx, sy, btn = 0) {
   if (btn === 1) { isPanning = true; panOrigin = { x: sx - state.panX, y: sy - state.panY }; return; }
   if (btn !== 0) return;
 
-  // OUTIL SUPPRIMER ACTIF : suppression au clic
   if (state.tool === 'delete') {
     const comp = findCompAt(w.x, w.y);
     const wireHit = findWireSegmentAt(w.x, w.y, 10);
@@ -1562,10 +1925,9 @@ function onPointerDown(sx, sy, btn = 0) {
     return;
   }
 
-  // Outil placement de symbole
   if (state.tool === 'place' && state.placeType) {
     pushHistory(`Ajout ${state.placeType}`);
-    state.selComp = addComp(state.placeType, w.x, w.y);
+    state.selComp = addComp(state.placeType, snap(w.x), snap(w.y));
     state.selWire = null;
     drawAll();
     saveToLocalStorage();
@@ -1594,7 +1956,6 @@ function onPointerDown(sx, sy, btn = 0) {
 
   if (state.tool === 'wire') { state.wireStart = null; drawAll(); return; }
 
-  // Déplacement d'une borne directe
   if (directBorne) {
     state.selComp = directBorne;
     state.selWire = null;
@@ -1608,7 +1969,6 @@ function onPointerDown(sx, sy, btn = 0) {
     return;
   }
 
-  // Déplacement d'un numéro de borne
   const termLblHit = findTermLabelAt(w.x, w.y);
   if (termLblHit) {
     const c = termLblHit.comp;
@@ -1629,7 +1989,6 @@ function onPointerDown(sx, sy, btn = 0) {
     return;
   }
 
-  // Déplacement d'un repère normalisé
   const lblComp = findLabelAt(w.x, w.y);
   if (lblComp) {
     state.selComp = lblComp;
@@ -1643,7 +2002,25 @@ function onPointerDown(sx, sy, btn = 0) {
     return;
   }
 
-  // Déplacement d'un fil orthogonal sans le déconnecter
+  const wireNumHit = findWireNumAt(w.x, w.y);
+  if (wireNumHit) {
+    state.selWire = wireNumHit;
+    state.selComp = null;
+    const nbox = getWireNumBox(wireNumHit);
+    dragSnapshot = createSnapshot(`Déplacement n° de fil ${wireNumHit.num}`);
+    dragWireNum = {
+      wire: wireNumHit,
+      baseX: nbox.baseX,
+      baseY: nbox.baseY,
+      startDx: nbox.dx,
+      startDy: nbox.dy,
+      offX: w.x - nbox.x,
+      offY: w.y - nbox.y
+    };
+    drawAll();
+    return;
+  }
+
   const wireHit = findWireSegmentAt(w.x, w.y, 8);
   const comp = findCompAt(w.x, w.y);
 
@@ -1665,7 +2042,6 @@ function onPointerDown(sx, sy, btn = 0) {
     return;
   }
 
-  // Sélection & Déplacement d'un composant
   if (comp) {
     state.selComp = comp;
     state.selWire = null;
@@ -1685,6 +2061,15 @@ function onPointerDown(sx, sy, btn = 0) {
 }
 
 function finalizePointerUp() {
+  if (dragWireNum && dragSnapshot) {
+    if (dragWireNum.wire.numDx !== dragWireNum.startDx || dragWireNum.wire.numDy !== dragWireNum.startDy) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
   if (dragWire && dragSnapshot) {
     if (dragWire.wire.midY !== dragWire.origMidY || dragWire.wire.midX !== dragWire.origMidX) {
       undoStack.push(dragSnapshot);
@@ -1727,6 +2112,7 @@ function finalizePointerUp() {
   dragLabelComp = null;
   dragTermLabel = null;
   dragWire = null;
+  dragWireNum = null;
   dragSnapshot = null;
 }
 
@@ -1753,9 +2139,20 @@ function onPointerMove(sx, sy) {
 
   state.hoverTermLabel = (!state.hoverTerm && !hoverBorne && state.tool === 'select') ? findTermLabelAt(w.x, w.y) : null;
   state.hoverLabel = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && state.tool === 'select') ? findLabelAt(w.x, w.y) : null;
-  state.hoverWireSeg = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && !state.hoverLabel && state.tool !== 'wire' && !dragComp && !dragLabelComp && !dragTermLabel)
+  state.hoverWireNum = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && !state.hoverLabel && state.tool === 'select') ? findWireNumAt(w.x, w.y) : null;
+  state.hoverWireSeg = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && !state.hoverLabel && !state.hoverWireNum && state.tool !== 'wire' && !dragComp && !dragLabelComp && !dragTermLabel && !dragWireNum)
     ? findWireSegmentAt(w.x, w.y, 8)
     : null;
+
+  if (dragWireNum) {
+    const targetX = Math.round(w.x - dragWireNum.offX);
+    const targetY = Math.round(w.y - dragWireNum.offY);
+    dragWireNum.wire.numDx = targetX - dragWireNum.baseX;
+    dragWireNum.wire.numDy = targetY - dragWireNum.baseY;
+    canvas.style.cursor = 'move';
+    drawAll();
+    return;
+  }
 
   if (dragTermLabel) {
     const targetX = Math.round(w.x - dragTermLabel.offX);
@@ -1808,7 +2205,7 @@ function onPointerMove(sx, sy) {
 
   if (state.tool === 'delete') {
     canvas.style.cursor = (state.hoverComp || state.hoverWireSeg) ? 'pointer' : 'not-allowed';
-  } else if (dragComp || hoverBorne || dragLabelComp || dragTermLabel || state.hoverLabel || state.hoverTermLabel) {
+  } else if (dragComp || hoverBorne || dragLabelComp || dragTermLabel || dragWireNum || state.hoverLabel || state.hoverTermLabel || state.hoverWireNum) {
     canvas.style.cursor = 'move';
   } else if (state.hoverWireSeg) {
     canvas.style.cursor = state.hoverWireSeg.orient === 'H' ? 'ns-resize' : 'ew-resize';
@@ -1868,12 +2265,24 @@ canvas.addEventListener('contextmenu', e => {
 
 canvas.addEventListener('dblclick', e => {
   const r = canvas.getBoundingClientRect(), w = toWorld(e.clientX - r.left, e.clientY - r.top);
+  const wNum = findWireNumAt(w.x, w.y);
+  if (wNum) {
+    state.selWire = wNum;
+    openWireNumModal(wNum);
+    return;
+  }
   const c = findLabelAt(w.x, w.y) || findCompAt(w.x, w.y);
   if (c) {
     state.selComp = c;
     openEditModal();
-  } else if (w.y >= 740 && w.y <= 810) {
-    openCartoucheModal();
+  } else {
+    const wireHit = findWireSegmentAt(w.x, w.y, 8);
+    if (wireHit) {
+      state.selWire = wireHit.wire;
+      openWireNumModal(wireHit.wire);
+    } else if (w.y >= 740 && w.y <= 810) {
+      openCartoucheModal();
+    }
   }
 });
 
@@ -2046,11 +2455,58 @@ function saveCartoucheModal() {
   closeCartoucheModal();
 }
 
+function openWireNumModal(wire) {
+  const target = wire || state.selWire;
+  if (!target) return;
+  state.selWire = target;
+  document.getElementById('inp-wire-num').value = target.num !== null && target.num !== undefined ? String(target.num) : '';
+  const m = document.getElementById('wire-num-modal');
+  m.classList.remove('hidden'); m.classList.add('flex');
+  setTimeout(() => {
+    const inp = document.getElementById('inp-wire-num');
+    inp.focus(); inp.select();
+  }, 40);
+}
+
+function closeWireNumModal() {
+  const m = document.getElementById('wire-num-modal');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+
+function saveWireNumModal() {
+  if (state.selWire) {
+    const val = document.getElementById('inp-wire-num').value.trim();
+    const applyEquip = document.getElementById('chk-wire-equip').checked;
+    pushHistory(`Numéro du fil : ${val || 'effacé'}`);
+    if (applyEquip) {
+      getEquipotentialWires(state.selWire).forEach(w => { w.num = val || null; });
+    } else {
+      state.selWire.num = val || null;
+    }
+    if (val) state.showWireNumbers = true;
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+  }
+  closeWireNumModal();
+}
+
+function resetWireNumPosModal() {
+  if (state.selWire) {
+    pushHistory('Réinit. position n° de fil');
+    state.selWire.numDx = null;
+    state.selWire.numDy = null;
+    drawAll();
+    saveToLocalStorage();
+  }
+  closeWireNumModal();
+}
+
 function renderSheetDataURL(scale = 2.5) {
   const SW = 1200, SH = 820;
   const prevZoom = state.zoom, prevPanX = state.panX, prevPanY = state.panY;
   const prevSelComp = state.selComp, prevSelWire = state.selWire;
-  const prevHoverTerm = state.hoverTerm, prevHoverComp = state.hoverComp, prevHoverLabel = state.hoverLabel, prevHoverTermLabel = state.hoverTermLabel, prevHoverWire = state.hoverWireSeg;
+  const prevHoverTerm = state.hoverTerm, prevHoverComp = state.hoverComp, prevHoverLabel = state.hoverLabel, prevHoverTermLabel = state.hoverTermLabel, prevHoverWire = state.hoverWireSeg, prevHoverWireNum = state.hoverWireNum;
   const prevTool = state.tool;
 
   state.selComp = null;
@@ -2060,6 +2516,7 @@ function renderSheetDataURL(scale = 2.5) {
   state.hoverLabel = null;
   state.hoverTermLabel = null;
   state.hoverWireSeg = null;
+  state.hoverWireNum = null;
   if (state.tool === 'place') state.tool = 'select';
 
   canvas.width = Math.floor(SW * scale);
@@ -2074,15 +2531,9 @@ function renderSheetDataURL(scale = 2.5) {
   ctx.fillStyle = '#ffffff';
   ctx.fillRect(0, 0, SW, SH);
 
-  const origDpr = Object.getOwnPropertyDescriptor(window, 'devicePixelRatio');
-  try {
-    Object.defineProperty(window, 'devicePixelRatio', { value: scale, configurable: true });
-    viewW = SW;
-    viewH = SH;
-    drawAll();
-  } finally {
-    if (origDpr) Object.defineProperty(window, 'devicePixelRatio', origDpr);
-  }
+  viewW = SW;
+  viewH = SH;
+  drawAll(scale);
   ctx.restore();
 
   const dataUrl = canvas.toDataURL('image/png');
@@ -2097,6 +2548,7 @@ function renderSheetDataURL(scale = 2.5) {
   state.hoverLabel = prevHoverLabel;
   state.hoverTermLabel = prevHoverTermLabel;
   state.hoverWireSeg = prevHoverWire;
+  state.hoverWireNum = prevHoverWireNum;
   state.tool = prevTool;
   updateCanvasSize();
 
@@ -2152,9 +2604,6 @@ function exportSVG() {
   showToast('📐 Fichier SVG exporté');
 }
 
-/* ============================================================================
-   7. MODÈLE TYPE : DÉMARRAGE DIRECT 2 SENS CONFORME AU PDF
-   ============================================================================ */
 function loadPreset(name, recordHistory = false) {
   if (recordHistory && (state.comps.length > 0 || state.wires.length > 0)) {
     pushHistory(`Chargement modèle ${name}`);
@@ -2203,54 +2652,46 @@ function loadPreset(name, recordHistory = false) {
     state.cartouche.title = is2Sens ? 'DEMARRAGE DIRECT 2 SENS DE ROTATION' : 'DEMARRAGE DIRECT 1 SENS DE ROTATION';
     state.currentFileName = is2Sens ? 'demarrage_direct_2_sens' : 'demarrage_direct_1_sens';
 
-    // Arrivée réseau triphasé
-    const topPh1 = pt(180, 74);
-    const topPh2 = pt(220, 74);
-    const topPh3 = pt(260, 74);
-    const topPE  = pt(440, 74);
+    const topPh1 = pt(180, 72);
+    const topPh2 = pt(220, 72);
+    const topPh3 = pt(260, 72);
+    const topPE  = pt(440, 72);
 
-    const y1 = borne(180, 120, 'Y1');
-    const y2 = borne(220, 120, 'Y2');
-    const y3 = borne(260, 120, 'Y3');
+    const y1 = borne(180, 112, 'Y1');
+    const y2 = borne(220, 112, 'Y2');
+    const y3 = borne(260, 112, 'Y3');
     addWire(topPh1, 0, y1, 0, 'PHASE');
     addWire(topPh2, 0, y2, 0, 'PHASE');
     addWire(topPh3, 0, y3, 0, 'PHASE');
 
-    // Sectionneur Q1
-    const q1 = addComp('Q_SECT_3P', 220, 200, 'Q1', '');
+    const q1 = addComp('Q_SECT_3P', 220, 196, 'Q1', '');
     addWire(y1, 1, q1, 0, 'PHASE');
     addWire(y2, 1, q1, 1, 'PHASE');
     addWire(y3, 1, q1, 2, 'PHASE');
 
-    // Contacteur KM1
     const km1 = addComp('KM_CONT_3P', 220, 380, 'KM1', '');
     addWire(q1, 3, km1, 0, 'PHASE');
     addWire(q1, 4, km1, 1, 'PHASE');
     addWire(q1, 5, km1, 2, 'PHASE');
 
-    // Relais thermique F1
-    const f1 = addComp('F_THERM_3P', 220, 540, 'F1', '');
+    const f1 = addComp('F_THERM_3P', 220, 544, 'F1', '');
     addWire(km1, 3, f1, 0, 'PHASE');
     addWire(km1, 4, f1, 1, 'PHASE');
     addWire(km1, 5, f1, 2, 'PHASE');
 
     if (is2Sens) {
-      // Verrouillage mécanique et Contacteur KM2
       addComp('VERR_MECA', 300, 380, '', '');
       const km2 = addComp('KM_CONT_3P', 380, 380, 'KM2', '');
 
-      // Pontage haut (3 niveaux distincts)
-      addWire(km1, 0, km2, 0, 'PHASE', 270);
-      addWire(km1, 1, km2, 1, 'PHASE', 290);
-      addWire(km1, 2, km2, 2, 'PHASE', 310);
+      addWire(km1, 0, km2, 0, 'PHASE', 266);
+      addWire(km1, 1, km2, 1, 'PHASE', 286);
+      addWire(km1, 2, km2, 2, 'PHASE', 306);
 
-      // Inversion de phases bas (1 et 3 inversées)
-      addWire(km2, 3, f1, 2, 'PHASE', 440);
-      addWire(km2, 4, f1, 1, 'PHASE', 460);
-      addWire(km2, 5, f1, 0, 'PHASE', 480);
+      addWire(km2, 3, f1, 2, 'PHASE', 442);
+      addWire(km2, 4, f1, 1, 'PHASE', 462);
+      addWire(km2, 5, f1, 0, 'PHASE', 482);
     }
 
-    // Bornier moteur Y4..Y6 + PE et Moteur M1
     const y4  = borne(180, 620, 'Y4');
     const y5  = borne(220, 620, 'Y5');
     const y6  = borne(260, 620, 'Y6');
@@ -2263,22 +2704,20 @@ function loadPreset(name, recordHistory = false) {
     addWire(y4, 1, m1, 0, 'PHASE');
     addWire(y5, 1, m1, 1, 'PHASE');
     addWire(y6, 1, m1, 2, 'PHASE');
-    addWire(topPE, 0, xpe, 0, 'PE', 620);
+    addWire(topPE, 0, xpe, 0, 'PE', 616);
     addWire(xpe, 1, m1, 3, 'PE', 'VH');
 
-    // Rails de commande 24V
-    const top24L = pt(680, 60), top24R = pt(1100, 60);
-    const bot24L = pt(680, 720), bot24R = pt(1100, 720);
+    const top24L = pt(680, 54), top24R = pt(1100, 54);
+    const bot24L = pt(680, 732), bot24R = pt(1100, 732);
     addWire(top24L, 0, top24R, 0, 'CMD');
-    addWire(bot24L, 0, bot24R, 0, 'CMD');
 
-    // Colonne sécurité : F1(95-96), -Q1, Arrêt S1
-    const x1   = borne(680, 100, 'X1');
-    const f1nc = addComp('F_NC_95_96', 680, 160, 'F1', '');
-    const q1p  = addComp('Q_PRE_NO',   680, 240, '-Q1', '');
-    const x2   = borne(680, 300, 'X2');
-    const s1   = addComp('S_BP_NC',    680, 360, 'S1', '');
-    const x3   = borne(680, 420, 'X3');
+    const x1     = borne(680, 86, 'X1');
+    const f1nc   = addComp('F_NC_95_96', 680, 140, 'F1', '');
+    const q1p    = addComp('Q_PRE_NO',   680, 212, '-Q1', '');
+    const x2     = borne(680, 268, 'X2');
+    const s1     = addComp('S_BP_NC',    680, 324, 'S1', '');
+    const x3     = borne(680, 380, 'X3');
+    const pDist1 = pt(680, 410);
 
     addWire(top24L, 0, x1, 0, 'CMD');
     addWire(x1, 1, f1nc, 0, 'CMD');
@@ -2286,69 +2725,78 @@ function loadPreset(name, recordHistory = false) {
     addWire(q1p, 1, x2, 0, 'CMD');
     addWire(x2, 1, s1, 0, 'CMD');
     addWire(s1, 1, x3, 0, 'CMD');
+    addWire(x3, 1, pDist1, 0, 'CMD');
 
-    // Branche Marche Sens 1 (KM1)
-    const s2     = addComp('S_BP_NO',   680, 480, 'S2', '');
-    const x4     = borne(680, 540, 'X4');
-    const km1no  = addComp('KM_NO',     760, 480, 'KM1', '');
-    const jSens1 = pt(680, 560);
-    const x7     = borne(680, 580, 'X7');
-    const km2nc  = addComp('KM_NC',     680, 620, 'KM2', '');
-    const bob1   = addComp('KM_BOBINE', 680, 680, 'KM1', '');
+    const pDistKM1 = pt(760, 410);
+    const s2       = addComp('S_BP_NO',   680, 456, 'S2', '');
+    const x4       = borne(680, 508, 'X4');
+    const km1no    = addComp('KM_NO',     760, 456, 'KM1', '');
+    const jSens1   = pt(680, 536);
+    const x7       = borne(680, 564, 'X7');
+    const km2nc    = addComp('KM_NC',     680, 616, 'KM2', '');
+    const bob1     = addComp('KM_BOBINE', 680, 684, 'KM1', '');
 
-    addWire(x3, 1, s2, 0, 'CMD');
+    addWire(pDist1, 0, s2, 0, 'CMD');
     addWire(s2, 1, x4, 0, 'CMD');
     addWire(x4, 1, jSens1, 0, 'CMD');
-    addWire(x3, 1, km1no, 0, 'CMD', 'HV');
+    addWire(pDist1, 0, pDistKM1, 0, 'CMD');
+    addWire(pDistKM1, 0, km1no, 0, 'CMD');
     addWire(km1no, 1, jSens1, 0, 'CMD', 'VH');
     addWire(jSens1, 0, x7, 0, 'CMD');
     addWire(x7, 1, km2nc, 0, 'CMD');
     addWire(km2nc, 1, bob1, 0, 'CMD');
     addWire(bob1, 1, bot24L, 0, 'CMD');
 
-    if (is2Sens) {
-      // Branche Marche Sens 2 (KM2)
-      const pRailS3 = pt(860, 420);
-      addWire(x3, 1, pRailS3, 0, 'CMD');
+    let lastTopDist = pDistKM1;
+    let lastBotRail = bot24L;
 
-      const s3     = addComp('S_BP_NO',   860, 480, 'S3', '');
-      const x5     = borne(860, 540, 'X5');
-      const x6     = borne(900, 560, 'X6');
-      const km2no  = addComp('KM_NO',     940, 480, 'KM2', '');
-      const jSens2 = pt(860, 560);
-      const x8     = borne(860, 580, 'X8');
-      const km1nc  = addComp('KM_NC',     860, 620, 'KM1', '');
-      const bob2   = addComp('KM_BOBINE', 860, 680, 'KM2', '');
-      const pBot2  = pt(860, 720);
+    if (is2Sens) {
+      const pRailS3  = pt(860, 410);
+      const pDistKM2 = pt(940, 410);
+      addWire(pDistKM1, 0, pRailS3, 0, 'CMD');
+      addWire(pRailS3, 0, pDistKM2, 0, 'CMD');
+
+      const s3     = addComp('S_BP_NO',   860, 456, 'S3', '');
+      const x5     = borne(860, 508, 'X5');
+      const km2no  = addComp('KM_NO',     940, 456, 'KM2', '');
+      const x6     = borne(940, 508, 'X6');
+      const jSens2 = pt(860, 536);
+      const x8     = borne(860, 564, 'X8');
+      const km1nc  = addComp('KM_NC',     860, 616, 'KM1', '');
+      const bob2   = addComp('KM_BOBINE', 860, 684, 'KM2', '');
+      const pBot2  = pt(860, 732);
 
       addWire(pRailS3, 0, s3, 0, 'CMD');
       addWire(s3, 1, x5, 0, 'CMD');
       addWire(x5, 1, jSens2, 0, 'CMD');
-      addWire(pRailS3, 0, km2no, 0, 'CMD', 'HV');
-      addWire(km2no, 1, x6, 0, 'CMD', 'VH');
-      addWire(x6, 1, jSens2, 0, 'CMD');
+      addWire(pDistKM2, 0, km2no, 0, 'CMD');
+      addWire(km2no, 1, x6, 0, 'CMD');
+      addWire(x6, 1, jSens2, 0, 'CMD', 'VH');
       addWire(jSens2, 0, x8, 0, 'CMD');
       addWire(x8, 1, km1nc, 0, 'CMD');
       addWire(km1nc, 1, bob2, 0, 'CMD');
       addWire(bob2, 1, pBot2, 0, 'CMD');
+      addWire(bot24L, 0, pBot2, 0, 'CMD');
+
+      lastTopDist = pDistKM2;
+      lastBotRail = pBot2;
     }
 
-    // Colonne Voyant H1 (Sous tension)
-    const pTopH1 = pt(1020, 420);
-    addWire(is2Sens ? state.comps.find(c => c.x === 860 && c.y === 420) : x3, is2Sens ? 0 : 1, pTopH1, 0, 'CMD');
-    const x9     = borne(1020, 600, 'X9');
-    const h1     = addComp('H_VOYANT', 1020, 660, 'H1', '');
+    const pTopH1 = pt(1020, 410);
+    addWire(lastTopDist, 0, pTopH1, 0, 'CMD');
+    const x9     = borne(1020, 592, 'X9');
+    const h1     = addComp('H_VOYANT', 1020, 646, 'H1', '');
     const x10    = borne(1020, 700, 'X10');
-    const pBotH1 = pt(1020, 720);
+    const pBotH1 = pt(1020, 732);
     addWire(pTopH1, 0, x9, 0, 'CMD');
     addWire(x9, 1, h1, 0, 'CMD');
     addWire(h1, 1, x10, 0, 'CMD');
     addWire(x10, 1, pBotH1, 0, 'CMD');
+    addWire(lastBotRail, 0, pBotH1, 0, 'CMD');
 
-    // Colonne Défaut thermique F1(97-98) & Voyant H2
-    const f1no   = addComp('F_NO_97_98', 1100, 540, 'F1', '');
-    const x11    = borne(1100, 600, 'X11');
-    const h2     = addComp('H_VOYANT',   1100, 660, 'H2', '');
+    const f1no   = addComp('F_NO_97_98', 1100, 520, 'F1', '');
+    const x11    = borne(1100, 592, 'X11');
+    const h2     = addComp('H_VOYANT',   1100, 646, 'H2', '');
     const x12    = borne(1100, 700, 'X12');
 
     addWire(top24R, 0, f1no, 0, 'CMD');
@@ -2356,16 +2804,18 @@ function loadPreset(name, recordHistory = false) {
     addWire(x11, 1, h2, 0, 'CMD');
     addWire(h2, 1, x12, 0, 'CMD');
     addWire(x12, 1, bot24R, 0, 'CMD');
+    addWire(pBotH1, 0, bot24R, 0, 'CMD');
   }
 
+  if (state.showWireNumbers) {
+    computeEquipotentialWireNumbers();
+  }
   updateFileBadge();
+  updateWireNumButtonUI();
   fitSheet();
   saveToLocalStorage();
 }
 
-/* ============================================================================
-   8. REDIMENSIONNEMENT DU CANEVAS & INITIALISATION
-   ============================================================================ */
 function updateCanvasSize() {
   const wrap = document.getElementById('canvas-wrap');
   const dpr = window.devicePixelRatio || 1;
