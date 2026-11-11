@@ -1,0 +1,3493 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>CBUSSAC Schéma - CAO Électrique</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    * { box-sizing: border-box; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+    html, body { margin: 0; padding: 0; width: 100%; height: 100%; overflow: hidden; background: #0f172a; font-family: system-ui, -apple-system, sans-serif; }
+    #app-body { display: flex; width: 100%; height: calc(100vh - 52px); position: relative; }
+    #canvas-wrap { flex: 1; width: 100%; height: calc(100vh - 52px); min-height: 500px; position: relative; background: #cbd5e1; overflow: hidden; }
+    #main-canvas { display: block; width: 100%; height: 100%; touch-action: none; cursor: crosshair; }
+    #sidebar { width: 290px; height: 100%; background: #1e293b; border-right: 1px solid #334155; display: flex; flex-direction: column; z-index: 30; transition: transform 0.2s ease; }
+    @media (max-width: 900px) {
+      #sidebar { position: absolute; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 8px 0 24px rgba(0,0,0,0.45); }
+      #sidebar.open { transform: translateX(0); }
+    }
+    .tool-btn.active { background: #2563eb !important; color: #fff !important; border-color: #60a5fa !important; }
+    .sym-card { transition: all 0.12s ease; }
+    .sym-card:hover { background: #334155; border-color: #60a5fa; transform: translateY(-1px); }
+    .sym-card.active { background: #1d4ed8; border-color: #93c5fd; box-shadow: 0 0 0 2px rgba(59,130,246,0.45); }
+    button:disabled { opacity: 0.38; cursor: not-allowed; pointer-events: none; }
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: #0f172a; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+    
+    @media print {
+      @page { size: A4 landscape; margin: 0; }
+      html, body { background: #ffffff !important; width: 100% !important; height: 100% !important; overflow: visible !important; }
+      header, #app-body, #save-modal, #edit-modal, #text-modal, #cartouche-modal, #wire-num-modal, #file-open-input, #toast-box, #drop-overlay { display: none !important; }
+      body * { visibility: hidden !important; }
+      #print-container, #print-container * { visibility: visible !important; }
+      #print-container {
+        position: fixed !important;
+        left: 0 !important;
+        top: 0 !important;
+        width: 100vw !important;
+        height: 100vh !important;
+        display: flex !important;
+        align-items: center !important;
+        justify-content: center !important;
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        z-index: 999999 !important;
+      }
+      #print-container img {
+        max-width: 100% !important;
+        max-height: 100% !important;
+        width: auto !important;
+        height: auto !important;
+        object-fit: contain !important;
+      }
+    }
+  </style>
+</head>
+<body class="text-slate-100">
+
+  <!-- Entrée fichier cachée pour l'ouverture -->
+  <input type="file" id="file-open-input" accept=".json,.cbs,application/json" class="hidden" onchange="handleFileOpen(event)">
+
+  <!-- Barre d'outils supérieure responsive -->
+  <header class="h-[52px] bg-slate-950 border-b border-slate-800 px-2.5 flex items-center justify-between gap-2 overflow-x-auto">
+    <div class="flex items-center gap-2 shrink-0">
+      <button onclick="toggleSidebar()" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold flex items-center gap-1">
+        <span>📚</span><span class="hidden sm:inline">Symboles</span>
+      </button>
+      <div class="font-bold text-sm tracking-tight text-white flex items-center gap-1.5">
+        <span class="px-1.5 py-0.5 rounded bg-blue-600 text-white text-xs">⚡</span>
+        <span>CBUSSAC</span><span class="text-blue-400">Schéma</span>
+      </div>
+    </div>
+
+    <!-- Actions de Fichier -->
+    <div class="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 shrink-0">
+      <button onclick="newBlankSheet()" class="px-2 py-1 rounded text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700" title="Nouvelle feuille vierge">📄 <span class="hidden md:inline">Nouveau</span></button>
+      <button onclick="triggerOpenFile()" class="px-2.5 py-1 rounded text-xs font-semibold bg-indigo-600 hover:bg-indigo-500 text-white border border-indigo-400 shadow-sm" title="Ouvrir un schéma (Ctrl+O)">📂 Ouvrir</button>
+      <button onclick="openSaveModal()" class="px-2.5 py-1 rounded text-xs font-semibold bg-blue-600 hover:bg-blue-500 text-white border border-blue-400 shadow-sm" title="Enregistrer le schéma (Ctrl+S)">💾 Enregistrer</button>
+    </div>
+
+    <!-- Outils de schéma & Annulation -->
+    <div class="flex items-center gap-1 bg-slate-900 p-1 rounded-lg border border-slate-800 shrink-0">
+      <button id="btn-undo" onclick="undo()" disabled class="px-2 py-1 rounded text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700" title="Annuler (Ctrl+Z)">↩️ <span class="hidden lg:inline">Annuler</span></button>
+      <button id="btn-redo" onclick="redo()" disabled class="px-2 py-1 rounded text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-amber-300 border border-slate-700" title="Rétablir (Ctrl+Y / Ctrl+Maj+Z)">↪️</button>
+      <span class="h-4 w-[1px] bg-slate-700 mx-0.5"></span>
+      <button id="btn-select" onclick="setTool('select')" class="tool-btn active px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-200 border border-transparent">🖱️ Sélection</button>
+      <button id="btn-wire" onclick="setTool('wire')" class="tool-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-200 border border-transparent">✏️ Tracer Fil</button>
+      <button id="btn-text" onclick="setTool('text')" class="tool-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-200 border border-transparent" title="Écrire du texte sur le schéma (Raccourci : T)">🔤 Texte</button>
+      <button id="btn-delete" onclick="handleDeleteToolClick()" class="tool-btn px-2.5 py-1 rounded text-xs font-medium bg-slate-800 text-slate-200 border border-transparent" title="Supprimer la sélection ou activer l'outil gomme (Suppr)">🗑️ Suppr.</button>
+    </div>
+
+    <!-- Type de conducteur -->
+    <div class="flex items-center gap-1.5 shrink-0">
+      <select id="wire-type" onchange="setWireType(this.value)" class="bg-slate-900 text-xs text-white font-medium px-2 py-1.5 rounded border border-slate-700">
+        <option value="PHASE">🔴 Phase / Puissance</option>
+        <option value="NEUTRAL">🔵 Neutre (Bleu)</option>
+        <option value="PE">🟢 Terre PE (Vert/Jaune)</option>
+        <option value="CMD">⚫ Commande 24V</option>
+        <option value="MECH">➖ Liaison Pointillée</option>
+      </select>
+    </div>
+
+    <!-- Actions, modèles et exports -->
+    <div class="flex items-center gap-1 shrink-0">
+      <button onclick="rotateSelected()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Pivoter 90° (Clic droit ou R)">🔄 90°</button>
+      <button onclick="duplicateSelected()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Dupliquer (Ctrl+D)">📋</button>
+      <button onclick="openEditModal()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Propriétés / Repère">🏷️ Repère</button>
+      <button id="btn-wire-num" onclick="handleAutoNumberWires()" oncontextmenu="event.preventDefault(); clearAllWireNumbers();" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-cyan-300 flex items-center gap-1" title="Numérotation automatique des fils par équipotentielle (Clic droit : effacer les numéros)">🔢 Num. Fils</button>
+      <button onclick="openCartoucheModal()" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-medium" title="Modifier le cartouche">📝 Cartouche</button>
+      <button onclick="zoomStep(1.18)" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold">＋</button>
+      <button onclick="zoomStep(1/1.18)" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-bold">－</button>
+      <button onclick="fitSheet()" class="px-2 py-1.5 rounded bg-blue-950 hover:bg-blue-900 border border-blue-700 text-blue-200 text-xs font-medium">⛶ Centrer</button>
+
+      <select onchange="if(this.value){loadPreset(this.value, true);this.value='';}" class="bg-slate-900 hover:bg-slate-800 text-amber-200 border border-slate-700 rounded px-2 py-1.5 text-xs font-medium">
+        <option value="">📐 Modèles Types...</option>
+        <option value="pdf_2sens">📄 PDF : Démarrage Direct 2 Sens</option>
+        <option value="pdf_1sens">⚡ Démarrage Direct 1 Sens</option>
+        <option value="vide">📄 Feuille Vierge</option>
+      </select>
+
+      <button onclick="printSchema()" class="px-2.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-sm" title="Imprimer le schéma en A4 Paysage (Ctrl+P)">🖨️ Imprimer</button>
+      <button onclick="exportJPG()" class="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold" title="Exporter en JPG">📷 JPG</button>
+      <button onclick="exportSVG()" class="px-2.5 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold" title="Exporter en SVG">📐 SVG</button>
+    </div>
+  </header>
+
+  <!-- Zone de dessin principale -->
+  <div id="app-body">
+    <aside id="sidebar">
+      <div class="p-2.5 border-b border-slate-700 bg-slate-900/70 space-y-2">
+        <input id="search-input" type="text" oninput="renderLibrary()" placeholder="Rechercher (Q1, KM1, F1, M1, S1, H1...)" class="w-full bg-slate-950 text-xs text-white px-2.5 py-1.5 rounded border border-slate-700 focus:outline-none focus:border-blue-500">
+        <div class="flex gap-1 overflow-x-auto pb-0.5 text-[11px]">
+          <button onclick="setCat('ALL')" id="cat-ALL" class="cat-btn px-2 py-0.5 rounded bg-blue-600 text-white font-semibold shrink-0">Tous</button>
+          <button onclick="setCat('PWR')" id="cat-PWR" class="cat-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 shrink-0">Puissance</button>
+          <button onclick="setCat('CMD')" id="cat-CMD" class="cat-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 shrink-0">Commande</button>
+          <button onclick="setCat('DOM')" id="cat-DOM" class="cat-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 shrink-0">Habitat</button>
+          <button onclick="setCat('BORN')" id="cat-BORN" class="cat-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 shrink-0">Bornes</button>
+        </div>
+      </div>
+      <div id="lib-grid" class="flex-1 overflow-y-auto p-2 grid grid-cols-2 gap-1.5 content-start"></div>
+      <div class="p-2 bg-slate-950 border-t border-slate-800 text-[11px] text-slate-400 flex justify-between">
+        <span>CBUSSAC Schéma</span>
+        <span>Ctrl+S / Ctrl+O / Ctrl+Z</span>
+      </div>
+    </aside>
+
+    <main id="canvas-wrap">
+      <canvas id="main-canvas"></canvas>
+
+      <!-- Notification Toast -->
+      <div id="toast-box" class="fixed top-16 left-1/2 -translate-x-1/2 bg-slate-900/95 border border-blue-500 text-white px-4 py-2 rounded-lg shadow-2xl text-xs font-semibold pointer-events-none opacity-0 transition-opacity duration-200 z-50 flex items-center gap-2">
+        <span id="toast-msg">Schéma enregistré</span>
+      </div>
+
+      <!-- Voile de Glisser-Déposer -->
+      <div id="drop-overlay" class="absolute inset-0 bg-blue-950/80 border-4 border-dashed border-blue-400 hidden items-center justify-center z-40 pointer-events-none">
+        <div class="bg-slate-900 px-6 py-4 rounded-xl border border-blue-400 text-center shadow-2xl">
+          <div class="text-2xl mb-1">📂</div>
+          <div class="text-sm font-bold text-white">Déposez votre schéma (.json / .cbs) ici</div>
+          <div class="text-xs text-blue-300 mt-0.5">Le fichier s'ouvrira immédiatement</div>
+        </div>
+      </div>
+
+      <!-- Bandeau d'état inférieur -->
+      <div class="absolute bottom-2.5 left-2.5 bg-slate-900/90 border border-slate-700 px-2.5 py-1 rounded text-[11px] text-slate-300 pointer-events-none flex items-center gap-3">
+        <span class="font-bold text-white">⚡ CBUSSAC Schéma</span>
+        <span id="file-name-text" class="text-emerald-400 font-semibold">demarrage_direct_2_sens.cbs.json</span>
+        <span id="status-text" class="text-blue-400 font-semibold">Mode : Sélection</span>
+        <span id="history-text" class="text-amber-300 font-medium hidden md:inline">Historique : prêt</span>
+        <span id="coords-text" class="hidden sm:inline font-mono text-slate-400">X:0 Y:0</span>
+      </div>
+    </main>
+  </div>
+
+  <!-- Modale Enregistrer -->
+  <div id="save-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white">💾 Enregistrer le Schéma — CBUSSAC Schéma</h3>
+        <button onclick="closeSaveModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Nom du fichier</label>
+        <div class="flex items-center gap-1.5">
+          <input id="inp-save-filename" type="text" class="flex-1 bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-white font-semibold" placeholder="mon_schema_electrique">
+          <span class="text-xs font-mono text-slate-400 bg-slate-800 px-2 py-1.5 rounded border border-slate-700">.cbs.json</span>
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeSaveModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
+        <button onclick="confirmSaveProject()" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">💾 Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Édition Repère -->
+  <div id="edit-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white">🏷️ Propriétés du Symbole</h3>
+        <button onclick="closeEditModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Repère (ex: Q1, KM1, F1, S1)</label>
+        <input id="inp-label" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-white font-bold">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Calibre / Fonction (ex: 16A, Marche, 4kW)</label>
+        <input id="inp-sub" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-slate-200">
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Bornes (séparées par une virgule)</label>
+        <input id="inp-terms" type="text" placeholder="ex: 1/L1,3/L2,5/L3 ou 95,96" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs font-mono text-slate-200">
+      </div>
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <button onclick="resetLabelPosModal()" type="button" class="px-2.5 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-amber-300">🎯 Réinit. position</button>
+        <div class="flex gap-2">
+          <button onclick="closeEditModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
+          <button onclick="saveEditModal()" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">Valider</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Cartouche -->
+  <div id="cartouche-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white">📝 Cartouche Normalisé</h3>
+        <button onclick="closeCartoucheModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div class="col-span-2">
+          <label class="block text-xs text-slate-300 mb-1">Titre du schéma</label>
+          <input id="cart-title" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-bold">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Établissement / Zone gauche</label>
+          <input id="cart-school" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Dessiné par</label>
+          <input id="cart-author" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Dessiné le</label>
+          <input id="cart-date" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Folio</label>
+          <input id="cart-folio" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white">
+        </div>
+      </div>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeCartoucheModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
+        <button onclick="saveCartoucheModal()" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">Enregistrer</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Ajout / Édition de Texte Libre -->
+  <div id="text-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-md p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white">🔤 Texte sur le Schéma — CBUSSAC Schéma</h3>
+        <button onclick="closeTextModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Contenu du texte (multi-lignes possible)</label>
+        <textarea id="inp-free-text" rows="3" placeholder="Ex : CIRCUIT DE PUISSANCE&#10;3×400V + PE&#10;Arrêt d'urgence" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-white font-semibold focus:outline-none focus:border-blue-500"></textarea>
+      </div>
+      <div class="grid grid-cols-2 gap-2.5">
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Taille de police</label>
+          <select id="inp-text-size" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-semibold">
+            <option value="9">Petite (9 px)</option>
+            <option value="11">Normale (11 px)</option>
+            <option value="13" selected>Moyenne (13 px)</option>
+            <option value="16">Grande (16 px)</option>
+            <option value="20">Titre (20 px)</option>
+            <option value="26">Très grand (26 px)</option>
+          </select>
+        </div>
+        <div>
+          <label class="block text-xs text-slate-300 mb-1">Couleur du texte</label>
+          <select id="inp-text-color" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-xs text-white font-semibold">
+            <option value="#0f172a">⚫ Noir normalisé</option>
+            <option value="#1d4ed8">🔵 Bleu électrique</option>
+            <option value="#dc2626">🔴 Rouge sécurité</option>
+            <option value="#15803d">🟢 Vert (PE / Marche)</option>
+            <option value="#b45309">🟠 Orange / Alerte</option>
+            <option value="#475569">⚪ Gris annotation</option>
+          </select>
+        </div>
+      </div>
+      <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer pt-1">
+        <input id="chk-text-box" type="checkbox" class="rounded border-slate-700 bg-slate-950 text-blue-600">
+        <span>Encadrer le texte (rectangle sur fond blanc)</span>
+      </label>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeTextModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
+        <button onclick="saveTextModal()" class="px-4 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">Valider</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Édition Numéro de Fil -->
+  <div id="wire-num-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-slate-700 rounded-xl w-full max-w-sm p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white">🔢 Numéro du Conducteur — CBUSSAC Schéma</h3>
+        <button onclick="closeWireNumModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <div>
+        <label class="block text-xs text-slate-300 mb-1">Numéro ou repère équipotentiel du fil (ex: 1, 2, L1, Ph1)</label>
+        <input id="inp-wire-num" type="text" class="w-full bg-slate-950 border border-slate-700 rounded px-2.5 py-1.5 text-sm text-cyan-300 font-bold">
+      </div>
+      <label class="flex items-center gap-2 text-xs text-slate-300 cursor-pointer">
+        <input id="chk-wire-equip" type="checkbox" checked class="rounded border-slate-700 bg-slate-950 text-blue-600">
+        <span>Appliquer à toute l'équipotentielle connectée</span>
+      </label>
+      <div class="flex items-center justify-between pt-2 border-t border-slate-800">
+        <div class="flex gap-1.5">
+          <button onclick="resetWireNumPosModal()" type="button" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-amber-300" title="Recentrer le numéro sur le fil">🎯 Réinit. pos.</button>
+          <button onclick="clearAllWireNumbers(); closeWireNumModal();" type="button" class="px-2 py-1.5 rounded bg-slate-800 hover:bg-slate-700 border border-slate-700 text-[11px] text-rose-300" title="Effacer tous les numéros de fils">🧹 Tout effacer</button>
+        </div>
+        <div class="flex gap-2">
+          <button onclick="closeWireNumModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
+          <button onclick="saveWireNumModal()" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">Valider</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const GRID = 20;
+const snap = v => Math.round(v / GRID) * GRID;
+
+function L(g, x1, y1, x2, y2) { g.beginPath(); g.moveTo(x1, y1); g.lineTo(x2, y2); g.stroke(); }
+function POLY(g, pts, close = false) {
+  g.beginPath(); g.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 1; i < pts.length; i++) g.lineTo(pts[i][0], pts[i][1]);
+  if (close) g.closePath();
+  g.stroke();
+}
+function C(g, x, y, r, fill = '#ffffff') {
+  g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2);
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  g.stroke();
+}
+function R(g, x, y, w, h, fill = '#ffffff') {
+  if (fill) { g.fillStyle = fill; g.fillRect(x, y, w, h); }
+  g.strokeRect(x, y, w, h);
+}
+function TXT(g, s, x, y, sz = 9, col = '#0f172a', align = 'center') {
+  g.save(); g.fillStyle = col; g.font = `bold ${sz}px sans-serif`;
+  g.textAlign = align; g.textBaseline = 'middle'; g.fillText(s, x, y); g.restore();
+}
+function DASH(g, arr, fn) { g.save(); g.setLineDash(arr); fn(); g.restore(); }
+
+let toastTimer = null;
+function showToast(msg) {
+  const box = document.getElementById('toast-box');
+  const txt = document.getElementById('toast-msg');
+  if (!box || !txt) return;
+  txt.textContent = msg;
+  box.style.opacity = '1';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { box.style.opacity = '0'; }, 2800);
+}
+
+const SYMBOLS = {
+  Q_SECT_3P: {
+    cat: 'PWR', name: 'Q1 Sectionneur Porte-Fusibles 3P', pref: 'Q', sub: '',
+    terms: [
+      { x: -40, y: -40, n: '1' }, { x: 0, y: -40, n: '3' }, { x: 40, y: -40, n: '5' },
+      { x: -40, y: 40,  n: '2' }, { x: 0, y: 40,  n: '4' }, { x: 40, y: 40,  n: '6' }
+    ],
+    draw(g) {
+      [-40, 0, 40].forEach(px => {
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, -40, px, -20);
+        L(g, px, 20, px, 40);
+        g.restore();
+        L(g, px - 5, -20, px + 5, -20);
+        L(g, px, 20, px - 14, -20);
+        g.save();
+        g.translate(px - 8, -3);
+        g.rotate(-0.337);
+        R(g, -3.5, -11, 7, 22, null);
+        g.restore();
+      });
+      DASH(g, [6, 5], () => L(g, -47, 0, 32, 0));
+    }
+  },
+  KM_CONT_3P: {
+    cat: 'PWR', name: 'KM1/KM2 Contacteur 3P', pref: 'KM', sub: '',
+    terms: [
+      { x: -40, y: -40, n: '1/L1' }, { x: 0, y: -40, n: '3/L2' }, { x: 40, y: -40, n: '5/L3' },
+      { x: -40, y: 40,  n: '2/T1' }, { x: 0, y: 40,  n: '4/T2' }, { x: 40, y: 40,  n: '6/T3' }
+    ],
+    draw(g) {
+      [-40, 0, 40].forEach(px => {
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, -40, px, -20);
+        L(g, px, 20, px, 40);
+        g.restore();
+        g.beginPath();
+        g.arc(px, -24.5, 4.5, Math.PI * 0.5, Math.PI * 1.5, false);
+        g.stroke();
+        L(g, px, 20, px - 14, -20);
+      });
+      DASH(g, [6, 5], () => L(g, -47, 0, 33, 0));
+    }
+  },
+  VERR_MECA: {
+    cat: 'PWR', name: 'Verrouillage Mécanique (▽)', pref: '', sub: '',
+    terms: [],
+    draw(g) {
+      POLY(g, [[-9, -7], [9, -7], [0, 9]], true);
+      DASH(g, [3, 3], () => { L(g, -46, 0, -5, 0); L(g, 5, 0, 32, 0); });
+    }
+  },
+  F_THERM_3P: {
+    cat: 'PWR', name: 'F1 Relais Thermique 3P', pref: 'F', sub: '',
+    terms: [
+      { x: -40, y: -40, n: '1/L1' }, { x: 0, y: -40, n: '3/L2' }, { x: 40, y: -40, n: '5/L3' },
+      { x: -40, y: 40,  n: '2/T1' }, { x: 0, y: 40,  n: '4/T2' }, { x: 40, y: 40,  n: '6/T3' }
+    ],
+    draw(g) {
+      [-40, 0, 40].forEach(px => {
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, -40, px, -12);
+        L(g, px, 12, px, 40);
+        g.restore();
+        POLY(g, [[px, -12], [px + 18, -12], [px + 18, 12], [px, 12]]);
+      });
+      DASH(g, [5, 4], () => {
+        R(g, -46, -18, 110, 36, null);
+        L(g, -22, 0, 58, 0);
+      });
+    }
+  },
+  M_MOT_3P: {
+    cat: 'PWR', name: 'M1 Moteur Asynchrone 3~', pref: 'M', sub: '',
+    terms: [
+      { x: -40, y: -40, n: 'U' },
+      { x: 0,   y: -40, n: 'V' },
+      { x: 40,  y: -40, n: 'W' },
+      { x: 60,  y: 0,   n: '' }
+    ],
+    draw(g) {
+      POLY(g, [[-40, -40], [-40, -24], [-15, -21]]);
+      L(g, 0, -40, 0, -26);
+      POLY(g, [[40, -40], [40, -24], [15, -21]]);
+      DASH(g, [3, 3], () => L(g, 60, 0, 26, 0));
+      C(g, 0, 0, 26, '#ffffff');
+      TXT(g, 'M', 0, -7, 13, '#0f172a');
+      TXT(g, '3~', 0, 8, 11, '#0f172a');
+      L(g, -9, 15, 9, 15);
+    }
+  },
+  T_TRANSFO_1: {
+    cat: 'PWR', name: 'T1 Transformateur (avec masse)', pref: 'T', sub: '',
+    terms: [
+      { x: -20, y: -60, n: '1' }, { x: 20, y: -60, n: '2' },
+      { x: -20, y: 60,  n: '3' }, { x: 20, y: 60,  n: '4' }
+    ],
+    draw(g) {
+      [-20, 20].forEach(px => {
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, -60, px, -48);
+        L(g, px, 48, px, 60);
+        g.restore();
+        L(g, px, -48, px, -33.6);
+        L(g, px, 33.6, px, 48);
+      });
+      C(g, 0, -14, 28, null);
+      C(g, 0, 14, 28, null);
+      g.save();
+      g.strokeStyle = '#1e3a8a';
+      POLY(g, [[-24.2, 0], [-54, 0], [-54, 18]]);
+      L(g, -63, 18, -45, 18);
+      L(g, -59.5, 21.5, -48.5, 21.5);
+      L(g, -56.5, 25, -51.5, 25);
+      g.restore();
+    }
+  },
+  T_TRANSFO_2: {
+    cat: 'PWR', name: 'T2 Transformateur Monophasé', pref: 'T', sub: '',
+    terms: [
+      { x: -20, y: -60, n: '1' }, { x: 20, y: -60, n: '2' },
+      { x: -20, y: 60,  n: '3' }, { x: 20, y: 60,  n: '4' }
+    ],
+    draw(g) {
+      [-20, 20].forEach(px => {
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, -60, px, -48);
+        L(g, px, 48, px, 60);
+        g.restore();
+        L(g, px, -48, px, -33.6);
+        L(g, px, 33.6, px, 48);
+      });
+      C(g, 0, -14, 28, null);
+      C(g, 0, 14, 28, null);
+    }
+  },
+  F_NC_95_96: {
+    cat: 'CMD', name: 'F1 Contact Thermique NC (95-96)', pref: 'F', sub: '',
+    terms: [{ x: 0, y: -24, n: '95' }, { x: 0, y: 24, n: '96' }],
+    draw(g) {
+      g.save();
+      g.strokeStyle = '#ef4444';
+      L(g, 0, -24, 0, -13);
+      L(g, 0, 13, 0, 24);
+      g.restore();
+      L(g, 0, -13, 14, -13);
+      L(g, 0, 13, 11, -16);
+      DASH(g, [5, 3], () => L(g, 5.5, 0, 16, 0));
+      POLY(g, [[21, -9], [21, -4], [16, -4], [16, 4], [21, 4], [21, 9]]);
+    }
+  },
+  F_NO_97_98: {
+    cat: 'CMD', name: 'F1 Contact Thermique NO (97-98)', pref: 'F', sub: '',
+    terms: [{ x: 0, y: -24, n: '97' }, { x: 0, y: 24, n: '98' }],
+    draw(g) {
+      g.save();
+      g.strokeStyle = '#ef4444';
+      L(g, 0, -24, 0, -13);
+      L(g, 0, 13, 0, 24);
+      g.restore();
+      L(g, 0, 13, -11, -13);
+      DASH(g, [5, 3], () => L(g, -5.5, 0, 7, 0));
+      POLY(g, [[12, -9], [12, -4], [7, -4], [7, 4], [12, 4], [12, 9]]);
+    }
+  },
+  Q_PRE_NO: {
+    cat: 'CMD', name: '-Q1 Contact Pré-coupure NO', pref: '-Q', sub: '',
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
+    draw(g) {
+      L(g, 0, -24, 0, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, -10, -10);
+    }
+  },
+  S_BP_NC: {
+    cat: 'CMD', name: 'S1 Bouton-Poussoir Arrêt NC', pref: 'S', sub: '',
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
+    draw(g) {
+      L(g, 0, -24, 0, -11);
+      L(g, 0, -11, 8, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, 6, -14);
+      DASH(g, [2.5, 2.5], () => L(g, 3, 0, -16, 0));
+      POLY(g, [[-12, -6], [-16, -6], [-16, 6], [-12, 6]]);
+    }
+  },
+  S_BP_NO: {
+    cat: 'CMD', name: 'S2/S3 Bouton-Poussoir Marche NO', pref: 'S', sub: '',
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
+    draw(g) {
+      L(g, 0, -24, 0, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, -10, -10);
+      DASH(g, [2.5, 2.5], () => L(g, -5, 0, -18, 0));
+      POLY(g, [[-14, -6], [-18, -6], [-18, 6], [-14, 6]]);
+    }
+  },
+  S_AU_NC: {
+    cat: 'CMD', name: 'S0 Arrêt d\'Urgence Coup de Poing NC', pref: 'S', sub: 'AU',
+    terms: [{ x: 0, y: -24, n: '11' }, { x: 0, y: 24, n: '12' }],
+    draw(g) {
+      L(g, 0, -24, 0, -11);
+      L(g, 0, -11, 8, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, 6, -14);
+      DASH(g, [2.5, 2.5], () => L(g, 3, 0, -20, 0));
+      POLY(g, [[-10, 0], [-13, -5], [-16, 0]]);
+      g.beginPath();
+      g.arc(-20, 0, 7, Math.PI * 0.5, Math.PI * 1.5, false);
+      g.closePath();
+      g.stroke();
+    }
+  },
+  KM_NO: {
+    cat: 'CMD', name: 'KM1/KM2 Contact NO (Maintien)', pref: 'KM', sub: '',
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
+    draw(g) {
+      L(g, 0, -24, 0, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, -10, -10);
+    }
+  },
+  KM_NC: {
+    cat: 'CMD', name: 'KM1/KM2 Contact NC (Verrouillage)', pref: 'KM', sub: '',
+    terms: [{ x: 0, y: -24, n: '' }, { x: 0, y: 24, n: '' }],
+    draw(g) {
+      L(g, 0, -24, 0, -11);
+      L(g, 0, -11, 8, -11);
+      L(g, 0, 24, 0, 11);
+      L(g, 0, 11, 6, -14);
+    }
+  },
+  KM_BOBINE: {
+    cat: 'CMD', name: 'KM1/KM2 Bobine (A1-A2)', pref: 'KM', sub: '',
+    terms: [{ x: 0, y: -22, n: 'A1' }, { x: 0, y: 22, n: 'A2' }],
+    draw(g) {
+      L(g, 0, -22, 0, -11);
+      L(g, 0, 11, 0, 22);
+      R(g, -15, -11, 30, 22, '#ffffff');
+    }
+  },
+  H_VOYANT: {
+    cat: 'CMD', name: 'H1/H2 Voyant Lumineux (X1-X2)', pref: 'H', sub: '',
+    terms: [{ x: 0, y: -22, n: 'X1' }, { x: 0, y: 22, n: 'X2' }],
+    draw(g) {
+      L(g, 0, -22, 0, -12);
+      L(g, 0, 12, 0, 22);
+      C(g, 0, 0, 12, '#ffffff');
+      L(g, -8.5, -8.5, 8.5, 8.5);
+      L(g, 8.5, -8.5, -8.5, 8.5);
+    }
+  },
+  BORNE: {
+    cat: 'BORN', name: 'Borne (X1..X12 / Y1..Y6 / Xpe)', pref: 'X', sub: '',
+    terms: [{ x: 0, y: -8, n: '' }, { x: 0, y: 8, n: '' }],
+    draw(g) {
+      L(g, 0, -8, 0, -5);
+      L(g, 0, 5, 0, 8);
+      C(g, 0, 0, 5, '#ffffff');
+      L(g, -7.5, -7.5, 7.5, 7.5);
+      R(g, -2.5, -10.5, 5, 5, '#ef4444');
+      R(g, -2.5, 5.5, 5, 5, '#ef4444');
+    }
+  },
+  TERRE: {
+    cat: 'BORN', name: 'Terre', pref: '', sub: '',
+    terms: [{ x: 0, y: -20, n: '' }],
+    draw(g) {
+      g.save();
+      g.lineWidth = 2.4;
+      L(g, -14, 0, 14, 0);
+      L(g, -9, 5, 9, 5);
+      L(g, -4, 10, 4, 10);
+      g.strokeStyle = '#ef4444';
+      L(g, 0, -20, 0, 0);
+      g.restore();
+    }
+  },
+  ALIM_3P: {
+    cat: 'BORN', name: 'Alimentation 3×400V + PE (Ph1-Ph2-Ph3)', pref: '', sub: '',
+    terms: [
+      { x: -40, y: 12, n: 'Ph1' },
+      { x: 0,   y: 12, n: 'Ph2' },
+      { x: 40,  y: 12, n: 'Ph3' }
+    ],
+    draw(g, c, isGhost) {
+      [-40, 0, 40].forEach(px => {
+        C(g, px, -8, 3.4, '#0f172a');
+        L(g, px, -8, px, 12);
+      });
+      if (!c) {
+        TXT(g, '3×400V + PE', 0, -34, 11.5, '#0f172a', 'center');
+        TXT(g, 'Ph1', -40, -18, 10, '#0f172a', 'center');
+        TXT(g, 'Ph2', 0,   -18, 10, '#0f172a', 'center');
+        TXT(g, 'Ph3', 40,  -18, 10, '#0f172a', 'center');
+      } else if (isGhost) {
+        TXT(g, '3×400V + PE', 0, -32, 9.5, '#0f172a', 'center');
+        TXT(g, 'Ph1', -40, -16, 8.5, '#0f172a', 'center');
+        TXT(g, 'Ph2', 0,   -16, 8.5, '#0f172a', 'center');
+        TXT(g, 'Ph3', 40,  -16, 8.5, '#0f172a', 'center');
+      }
+    }
+  },
+  PT_CONN: {
+    cat: 'BORN', name: 'Noeud de Connexion', pref: '', sub: '',
+    terms: [{ x: 0, y: 0, n: '' }],
+    draw(g) {
+      C(g, 0, 0, 2.5, '#0f172a');
+    }
+  },
+  DDR_30MA: {
+    cat: 'DOM', name: 'Différentiel 30mA (DDR)', pref: 'Q', sub: '40A 30mA',
+    terms: [
+      { x: -20, y: -40, n: 'N' }, { x: 20, y: -40, n: '1' },
+      { x: -20, y: 40,  n: 'N' }, { x: 20, y: 40,  n: '2' }
+    ],
+    draw(g) {
+      [-20, 20].forEach(px => {
+        L(g, px, -40, px, -15);
+        C(g, px, -12, 2.5, '#ffffff');
+        L(g, px - 4, -9, px + 4, -9);
+        L(g, px, 40, px, 14);
+        L(g, px, 14, px - 12, -13);
+      });
+      g.beginPath(); g.ellipse(0, 20, 28, 5, 0, 0, Math.PI * 2); g.stroke();
+      DASH(g, [2.5, 2.5], () => L(g, -26, 0, 14, 0));
+      R(g, -36, -7, 12, 14, '#ffffff');
+      TXT(g, 'T', -30, 0, 8, '#0f172a');
+    }
+  },
+  DISJ_1PN: {
+    cat: 'DOM', name: 'Disjoncteur 1P+N (C16 / C20)', pref: 'Q', sub: '16A',
+    terms: [
+      { x: -20, y: -40, n: 'N' }, { x: 20, y: -40, n: '1' },
+      { x: -20, y: 40,  n: 'N' }, { x: 20, y: 40,  n: '2' }
+    ],
+    draw(g) {
+      [-20, 20].forEach(px => {
+        L(g, px, -40, px, -14);
+        L(g, px - 3.5, -17.5, px + 3.5, -10.5);
+        L(g, px + 3.5, -17.5, px - 3.5, -10.5);
+        L(g, px, 40, px, 14);
+        L(g, px, 14, px - 12, -14);
+      });
+      DASH(g, [3, 3], () => L(g, -26, 0, 14, 0));
+    }
+  },
+  DOM_TL: {
+    cat: 'DOM', name: 'Télérupteur (TL1)', pref: 'TL', sub: '',
+    terms: [
+      { x: -40, y: -40, n: '1' },
+      { x: -40, y: 40,  n: '2' },
+      { x: 40,  y: -40, n: '3' },
+      { x: 40,  y: 40,  n: '4' }
+    ],
+    draw(g, c, isGhost) {
+      g.save();
+      g.strokeStyle = '#ef4444';
+      L(g, -40, -40, -40, -20);
+      L(g, -40, 20,  -40, 40);
+      L(g, 40,  -40, 40,  -18);
+      L(g, 40,  20,  40,  40);
+      g.restore();
+
+      // Bobine gauche (1-2)
+      L(g, -40, -20, -40, -14);
+      L(g, -40, 14,  -40, 20);
+      R(g, -62, -14, 44, 28, null);
+      if (!c || isGhost) {
+        TXT(g, 'TL1', -40, 1, 11, '#0f172a', 'center');
+      }
+
+      // Contact et mécanisme à impulsion droite (3-4)
+      L(g, 40, 20, 25, -18);
+      POLY(g, [[14, 0], [17.5, 8], [21, 0]]);
+      DASH(g, [3, 3], () => {
+        L(g, 2, 0, 14, 0);
+        L(g, 21, 0, 32.5, 0);
+        POLY(g, [[8, 0], [8, -7], [26, -7], [26, 0]]);
+      });
+      POLY(g, [[13, -7], [20, -10.5], [20, -3.5]], true);
+    }
+  },
+  DOM_INTER: {
+    cat: 'DOM', name: 'Interrupteur', pref: 'S', sub: '',
+    terms: [
+      { x: 0, y: -40, n: 'L' },
+      { x: 0, y: 40,  n: '1' }
+    ],
+    draw(g) {
+      g.save();
+      g.strokeStyle = '#ef4444';
+      L(g, 0, -40, 0, -18);
+      L(g, 0, 20, 0, 40);
+      g.restore();
+      C(g, 0, -13.5, 4.5, null);
+      L(g, 0, 20, -18, -18);
+    }
+  },
+  DOM_VV: {
+    cat: 'DOM', name: 'Interrupteur Va-et-Vient', pref: 'S', sub: '',
+    terms: [
+      { x: -40, y: 0,   n: '1' },
+      { x: 40,  y: -20, n: '2' },
+      { x: 40,  y: 20,  n: '3' }
+    ],
+    draw(g) {
+      C(g, 0, 0, 24, '#ffffff');
+      g.save();
+      g.strokeStyle = '#ef4444';
+      L(g, -40, 0, -29, 0);
+      L(g, 29, -20, 40, -20);
+      L(g, 29, 20, 40, 20);
+      g.restore();
+      L(g, -29, 0, -17, 0);
+      L(g, 11.5, -9.5, 29, -20);
+      L(g, 11.5, 9.5, 29, 20);
+      C(g, -14, 0, 2.7, '#ffffff');
+      C(g, 9, -8, 2.7, '#ffffff');
+      C(g, 9, 8, 2.7, '#ffffff');
+      g.save();
+      g.lineWidth = 3.2;
+      L(g, -11.3, -0.5, 14, -5.5);
+      g.restore();
+    }
+  },
+  DOM_PRISE: {
+    cat: 'DOM', name: 'Prise de Courant 2P+T 16A', pref: 'PC', sub: '16A',
+    terms: [{ x: -20, y: -40, n: 'N' }, { x: 0, y: -40, n: 'PE' }, { x: 20, y: -40, n: 'L' }],
+    draw(g) {
+      L(g, -20, -40, -20, -10);
+      L(g, 0, -40, 0, -16);
+      L(g, 20, -40, 20, -10);
+      L(g, -8, -16, 8, -16);
+      L(g, -5, -12, 5, -12);
+      L(g, -2, -8, 2, -8);
+      g.beginPath(); g.arc(-20, -4, 6, Math.PI, 0, false); g.stroke();
+      g.beginPath(); g.arc(20, -4, 6, Math.PI, 0, false); g.stroke();
+    }
+  },
+  TEXTE: {
+    cat: 'BORN', name: 'Zone de Texte Libre', pref: '', sub: '',
+    terms: [],
+    draw(g) {
+      TXT(g, 'Abc', 0, 0, 12, '#1d4ed8');
+    }
+  }
+};
+
+const WIRE_STYLES = {
+  PHASE:   { col: '#0f172a', w: 1.8, d: [] },
+  NEUTRAL: { col: '#2563eb', w: 1.8, d: [] },
+  PE:      { col: '#16a34a', w: 1.6, d: [5, 4] },
+  CMD:     { col: '#0f172a', w: 1.6, d: [] },
+  MECH:    { col: '#334155', w: 1.3, d: [3, 3] }
+};
+
+const canvas = document.getElementById('main-canvas');
+const ctx = canvas.getContext('2d');
+const AUTOSAVE_KEY = 'cbussac_schema_autosave_v3';
+
+const MAX_HISTORY = 60;
+let undoStack = [];
+let redoStack = [];
+let dragSnapshot = null;
+
+let state = {
+  tool: 'select',
+  placeType: null,
+  wireType: 'PHASE',
+  cat: 'ALL',
+  zoom: 1,
+  panX: 20,
+  panY: 15,
+  comps: [],
+  wires: [],
+  selComp: null,
+  selWire: null,
+  selComps: [],
+  selWires: [],
+  wireStart: null,
+  hoverTerm: null,
+  hoverComp: null,
+  hoverLabel: null,
+  hoverTermLabel: null,
+  hoverWireSeg: null,
+  hoverWireNum: null,
+  showWireNumbers: false,
+  mouseW: { x: 0, y: 0 },
+  presetName: 'pdf_2sens',
+  currentFileName: 'demarrage_direct_2_sens',
+  cartouche: {
+    school: 'LP XXXX',
+    title: 'DEMARRAGE DIRECT 2 SENS DE ROTATION',
+    date: '08/11/2026',
+    author: 'C. BUSSAC',
+    folio: '01 / 01'
+  }
+};
+
+function updateWireNumButtonUI() {
+  const btn = document.getElementById('btn-wire-num');
+  if (!btn) return;
+  const hasNums = state.showWireNumbers && state.wires.some(w => w.num !== undefined && w.num !== null && String(w.num) !== '');
+  if (hasNums) {
+    btn.classList.add('tool-btn', 'active');
+  } else {
+    btn.classList.remove('active');
+  }
+}
+
+function updateFileBadge() {
+  const el = document.getElementById('file-name-text');
+  if (el) el.textContent = (state.currentFileName || 'schema') + '.cbs.json';
+}
+
+function saveToLocalStorage() {
+  try {
+    const payload = {
+      app: 'CBUSSAC Schéma',
+      version: '3.1',
+      savedAt: new Date().toISOString(),
+      presetName: state.presetName,
+      currentFileName: state.currentFileName,
+      showWireNumbers: state.showWireNumbers,
+      cartouche: state.cartouche,
+      comps: state.comps,
+      wires: state.wires
+    };
+    localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
+  } catch (e) {}
+}
+
+function createSnapshot(actionLabel = '') {
+  return {
+    actionLabel,
+    presetName: state.presetName,
+    currentFileName: state.currentFileName,
+    showWireNumbers: state.showWireNumbers,
+    cartouche: JSON.parse(JSON.stringify(state.cartouche)),
+    comps: JSON.parse(JSON.stringify(state.comps)),
+    wires: JSON.parse(JSON.stringify(state.wires)),
+    selCompId: state.selComp ? state.selComp.id : null
+  };
+}
+
+function pushHistory(actionLabel = 'Modification') {
+  undoStack.push(createSnapshot(actionLabel));
+  if (undoStack.length > MAX_HISTORY) undoStack.shift();
+  redoStack = [];
+  updateHistoryButtons(actionLabel);
+  saveToLocalStorage();
+}
+
+function restoreSnapshot(snapObj) {
+  if (!snapObj) return;
+  state.presetName = snapObj.presetName || 'pdf_2sens';
+  state.currentFileName = snapObj.currentFileName || 'schema_cbussac';
+  state.showWireNumbers = Boolean(snapObj.showWireNumbers);
+  state.cartouche = JSON.parse(JSON.stringify(snapObj.cartouche));
+  state.comps = JSON.parse(JSON.stringify(snapObj.comps));
+  state.wires = JSON.parse(JSON.stringify(snapObj.wires));
+  state.selComp = snapObj.selCompId ? (state.comps.find(c => c.id === snapObj.selCompId) || null) : null;
+  state.selComps = state.selComp ? [state.selComp] : [];
+  state.selWire = null;
+  state.selWires = [];
+  state.wireStart = null;
+  updateFileBadge();
+  updateWireNumButtonUI();
+  drawAll();
+  saveToLocalStorage();
+}
+
+function undo() {
+  if (undoStack.length === 0) return;
+  const prev = undoStack.pop();
+  redoStack.push(createSnapshot(prev.actionLabel));
+  restoreSnapshot(prev);
+  updateHistoryButtons(`Annulé : ${prev.actionLabel || 'action'}`);
+  showToast(`↩️ Annulé : ${prev.actionLabel || 'action'}`);
+}
+
+function redo() {
+  if (redoStack.length === 0) return;
+  const next = redoStack.pop();
+  undoStack.push(createSnapshot(next.actionLabel));
+  restoreSnapshot(next);
+  updateHistoryButtons(`Rétabli : ${next.actionLabel || 'action'}`);
+  showToast(`↪️ Rétabli : ${next.actionLabel || 'action'}`);
+}
+
+function updateHistoryButtons(msg = null) {
+  const canUndo = undoStack.length > 0;
+  const canRedo = redoStack.length > 0;
+  const u = document.getElementById('btn-undo');
+  const r = document.getElementById('btn-redo');
+  if (u) u.disabled = !canUndo;
+  if (r) r.disabled = !canRedo;
+  const histEl = document.getElementById('history-text');
+  if (histEl) {
+    histEl.textContent = msg
+      ? `${msg} (${undoStack.length})`
+      : `Historique : ${undoStack.length} | Rétablir : ${redoStack.length}`;
+  }
+}
+
+function sanitizeFileName(str) {
+  return (str || 'schema_cbussac')
+    .toLowerCase()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9_-]+/g, '_')
+    .replace(/^_+|_+$/g, '') || 'schema_cbussac';
+}
+
+function openSaveModal() {
+  const inp = document.getElementById('inp-save-filename');
+  inp.value = state.currentFileName || sanitizeFileName(state.cartouche.title);
+  const m = document.getElementById('save-modal');
+  m.classList.remove('hidden');
+  m.classList.add('flex');
+  setTimeout(() => { inp.focus(); inp.select(); }, 50);
+}
+
+function closeSaveModal() {
+  const m = document.getElementById('save-modal');
+  m.classList.add('hidden');
+  m.classList.remove('flex');
+}
+
+async function confirmSaveProject() {
+  const rawName = document.getElementById('inp-save-filename').value.trim();
+  const baseName = rawName ? rawName.replace(/(\.cbs)?\.json$/i, '') : 'schema_cbussac';
+  state.currentFileName = baseName;
+  updateFileBadge();
+  closeSaveModal();
+
+  const fileName = `${baseName}.cbs.json`;
+  const payload = JSON.stringify({
+    app: 'CBUSSAC Schéma',
+    version: '3.1',
+    savedAt: new Date().toISOString(),
+    presetName: state.presetName,
+    currentFileName: state.currentFileName,
+    showWireNumbers: state.showWireNumbers,
+    cartouche: state.cartouche,
+    comps: state.comps,
+    wires: state.wires
+  }, null, 2);
+
+  saveToLocalStorage();
+
+  if (window.showSaveFilePicker) {
+    try {
+      const handle = await window.showSaveFilePicker({
+        suggestedName: fileName,
+        types: [{
+          description: 'Fichier CBUSSAC Schéma (.cbs.json)',
+          accept: { 'application/json': ['.json', '.cbs'] }
+        }]
+      });
+      const writable = await handle.createWritable();
+      await writable.write(payload);
+      await writable.close();
+      showToast(`💾 Schéma enregistré : ${handle.name}`);
+      return;
+    } catch (err) {
+      if (err && err.name === 'AbortError') return;
+    }
+  }
+
+  const blob = new Blob([payload], { type: 'application/json;charset=utf-8' });
+  const a = document.createElement('a');
+  a.download = fileName;
+  a.href = URL.createObjectURL(blob);
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  showToast(`💾 Schéma téléchargé sous « ${fileName} »`);
+}
+
+function triggerOpenFile() {
+  const inp = document.getElementById('file-open-input');
+  if (inp) {
+    inp.value = '';
+    inp.click();
+  }
+}
+
+function handleFileOpen(event) {
+  const file = event.target.files && event.target.files[0];
+  if (!file) return;
+  readAndLoadFile(file);
+}
+
+function readAndLoadFile(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      const cleanName = file.name.replace(/(\.cbs)?\.json$/i, '').replace(/\.cbs$/i, '');
+      data.currentFileName = cleanName;
+      loadProjectObject(data, `📂 Schéma « ${file.name} » ouvert avec succès`);
+    } catch (err) {
+      showToast('⚠️ Ce fichier n\'est pas un schéma CBUSSAC Schéma (.json) valide.');
+    }
+  };
+  reader.readAsText(file);
+}
+
+function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
+  if (!data || !Array.isArray(data.comps) || !Array.isArray(data.wires)) {
+    showToast('⚠️ Format de schéma invalide.');
+    return;
+  }
+
+  pushHistory('Ouverture de schéma');
+
+  state.presetName = data.presetName || 'custom';
+  state.currentFileName = data.currentFileName || sanitizeFileName(data.cartouche?.title || 'schema_cbussac');
+  if (data.cartouche && typeof data.cartouche === 'object') {
+    state.cartouche = {
+      school: data.cartouche.school ?? 'LP XXXX',
+      title:  data.cartouche.title  ?? 'SCHEMA ELECTRIQUE',
+      date:   data.cartouche.date   ?? '08/11/2026',
+      author: data.cartouche.author ?? 'C. BUSSAC',
+      folio:  data.cartouche.folio  ?? '01 / 01'
+    };
+  }
+
+  state.comps = data.comps
+    .filter(c => c && SYMBOLS[c.type])
+    .map(c => ({
+      id: c.id || ('c' + Math.random().toString(36).slice(2, 8)),
+      type: c.type,
+      x: Math.round(Number(c.x) || 200),
+      y: Math.round(Number(c.y) || 200),
+      rot: Number(c.rot) || 0,
+      label: c.label !== undefined ? String(c.label) : '',
+      sub: c.sub !== undefined ? String(c.sub) : '',
+      customTerms: c.customTerms || null,
+      lblDx: typeof c.lblDx === 'number' ? c.lblDx : null,
+      lblDy: typeof c.lblDy === 'number' ? c.lblDy : null,
+      termOffsets: c.termOffsets ? JSON.parse(JSON.stringify(c.termOffsets)) : null,
+      textSize: Number(c.textSize) || 13,
+      textColor: c.textColor || '#0f172a',
+      textBox: Boolean(c.textBox)
+    }));
+
+  const validIds = new Set(state.comps.map(c => c.id));
+  state.wires = data.wires
+    .filter(w => w && validIds.has(w.c1) && validIds.has(w.c2))
+    .map(w => ({
+      id: w.id || ('w' + Math.random().toString(36).slice(2, 8)),
+      c1: w.c1,
+      t1: Number(w.t1) || 0,
+      c2: w.c2,
+      t2: Number(w.t2) || 0,
+      style: WIRE_STYLES[w.style] ? w.style : 'CMD',
+      midY: w.midY !== undefined ? w.midY : null,
+      midX: w.midX !== undefined ? w.midX : null,
+      num: w.num !== undefined ? w.num : null,
+      numDx: typeof w.numDx === 'number' ? w.numDx : null,
+      numDy: typeof w.numDy === 'number' ? w.numDy : null
+    }));
+
+  state.showWireNumbers = data.showWireNumbers !== undefined
+    ? Boolean(data.showWireNumbers)
+    : state.wires.some(w => w.num !== null && w.num !== undefined && String(w.num) !== '');
+
+  state.selComp = null;
+  state.selWire = null;
+  state.selComps = [];
+  state.selWires = [];
+  state.wireStart = null;
+  updateFileBadge();
+  updateWireNumButtonUI();
+  fitSheet();
+  saveToLocalStorage();
+  showToast(toastMessage);
+}
+
+function newBlankSheet() {
+  loadPreset('vide', true);
+  state.currentFileName = 'nouveau_schema';
+  updateFileBadge();
+  showToast('📄 Nouvelle feuille vierge prête');
+}
+
+const canvasWrapEl = document.getElementById('canvas-wrap');
+const dropOverlayEl = document.getElementById('drop-overlay');
+
+canvasWrapEl.addEventListener('dragover', e => {
+  e.preventDefault();
+  dropOverlayEl.classList.remove('hidden');
+  dropOverlayEl.classList.add('flex');
+});
+canvasWrapEl.addEventListener('dragleave', e => {
+  e.preventDefault();
+  dropOverlayEl.classList.add('hidden');
+  dropOverlayEl.classList.remove('flex');
+});
+canvasWrapEl.addEventListener('drop', e => {
+  e.preventDefault();
+  dropOverlayEl.classList.add('hidden');
+  dropOverlayEl.classList.remove('flex');
+  const file = e.dataTransfer?.files?.[0];
+  if (file) readAndLoadFile(file);
+});
+
+let viewW = 1000, viewH = 650;
+let isPanning = false, panOrigin = { x: 0, y: 0 };
+let dragComp = null, dragOff = { x: 0, y: 0 }, dragStartPos = { x: 0, y: 0 };
+let dragMulti = null;
+let selBox = null;
+let dragLabelComp = null, dragLabelOff = { x: 0, y: 0 }, dragLabelStart = { dx: 0, dy: 0 };
+let dragTermLabel = null;
+let dragWire = null;
+let dragWireNum = null;
+
+function isCompSelected(c) {
+  return Boolean(c && (c === state.selComp || (state.selComps && state.selComps.includes(c))));
+}
+
+function isWireSelected(w) {
+  return Boolean(w && (w === state.selWire || (state.selWires && state.selWires.includes(w))));
+}
+
+function toWorld(sx, sy) {
+  return { x: (sx - state.panX) / state.zoom, y: (sy - state.panY) / state.zoom };
+}
+
+function getDefaultLabelOffset(c) {
+  const def = SYMBOLS[c.type];
+  const maxX = def ? def.terms.reduce((m, t) => Math.max(m, Math.abs(t.x)), 0) : 0;
+  if (c.type === 'ALIM_3P') return { dx: 0, dy: -32, sz: 9.5, align: 'center' };
+  if (c.type === 'TERRE') return { dx: 24, dy: -4, sz: 10 };
+  if (c.type === 'DOM_TL') return { dx: -40, dy: 1, sz: 11.5, align: 'center' };
+  if (c.type === 'DOM_VV') return { dx: 0, dy: 38, sz: 11.5, align: 'center' };
+  if (c.type === 'DOM_INTER') return { dx: 30, dy: 2, sz: 11.5 };
+  if (c.type === 'BORNE') return { dx: 24, dy: -11, sz: 10 };
+  if (c.type === 'M_MOT_3P') return { dx: 12, dy: 36, sz: 10.5 };
+  if (c.type === 'T_TRANSFO_1' || c.type === 'T_TRANSFO_2') return { dx: 52, dy: 2, sz: 11.5 };
+  if (c.type === 'KM_BOBINE') return { dx: -20, dy: 2, sz: 9.5 };
+  if (c.type === 'H_VOYANT') return { dx: -17, dy: 2, sz: 9.5 };
+  if (c.type === 'Q_SECT_3P') return { dx: 76, dy: 2, sz: 11.5 };
+  if (c.type === 'F_THERM_3P') return { dx: 88, dy: 2, sz: 11.5 };
+  if (c.type === 'KM_CONT_3P') return { dx: 84, dy: 2, sz: 11.5 };
+  if (c.type === 'F_NC_95_96') return { dx: 48, dy: 2, sz: 11.5 };
+  if (c.type === 'F_NO_97_98') return { dx: 38, dy: 2, sz: 11.5 };
+  if (c.type === 'S_BP_NC' || c.type === 'S_BP_NO') return { dx: -24, dy: 0, sz: 9.5 };
+  return { dx: maxX >= 35 ? -62 : -18, dy: 0, sz: 9.5 };
+}
+
+function getTextCompBounds(c) {
+  const raw = (c.label !== undefined && c.label !== '') ? String(c.label) : 'Texte';
+  const lines = raw.split('\n');
+  const fontSize = Number(c.textSize) || 13;
+  const lineHeight = Math.round(fontSize * 1.28);
+  ctx.save();
+  ctx.font = `bold ${fontSize}px sans-serif`;
+  let maxW = 24;
+  lines.forEach(line => {
+    const m = ctx.measureText(line || ' ').width;
+    if (m > maxW) maxW = m;
+  });
+  ctx.restore();
+  const w = Math.ceil(maxW + 14);
+  const h = Math.ceil(lines.length * lineHeight + 8);
+  return {
+    w, h, lines, fontSize, lineHeight,
+    color: c.textColor || '#0f172a',
+    boxed: Boolean(c.textBox)
+  };
+}
+
+function getLabelBox(c) {
+  if (!c || (!c.label && !c.sub) || c.type === 'PT_CONN' || c.type === 'TEXTE') return null;
+  const d = getDefaultLabelOffset(c);
+  const align = d.align || 'right';
+  const dx = typeof c.lblDx === 'number' ? c.lblDx : d.dx;
+  const dy = typeof c.lblDy === 'number' ? c.lblDy : d.dy;
+  const x = c.x + dx;
+  const y = c.y + dy;
+  const txtLen = Math.max((c.label || '').length, (c.sub || '').length);
+  const bw = Math.max(20, txtLen * 6.5 + 8);
+  const bh = c.sub ? 24 : 14;
+  return {
+    x, y, dx, dy, sz: d.sz, align,
+    bx: align === 'center' ? (x - bw / 2) : (x - bw + 2),
+    by: y - (c.sub ? 10 : 7),
+    bw, bh
+  };
+}
+
+function getDefaultTermLabelSpec(c, t) {
+  if (c.type === 'ALIM_3P') {
+    return { dx: 0, dy: -28, sz: 8.5, align: 'center' };
+  }
+  if (c.type === 'DOM_TL') {
+    const dy = t.y < c.y ? 11 : -11;
+    return { dx: 6, dy, sz: 8.5, align: 'left' };
+  }
+  if (c.type === 'DOM_VV') {
+    return { dx: t.x < 0 ? 8 : -9, dy: -9, sz: 8.5, align: 'center' };
+  }
+  if (c.type === 'DOM_INTER') {
+    return { dx: 8, dy: 0, sz: 8.5, align: 'left' };
+  }
+  if (c.type === 'T_TRANSFO_1' || c.type === 'T_TRANSFO_2') {
+    const dy = t.y < c.y ? 10 : -10;
+    return { dx: 5, dy, sz: 8, align: 'left' };
+  }
+  if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'KM_CONT_3P') {
+    const dy = t.y < c.y ? 12 : -12;
+    return { dx: 5, dy, sz: 8.5, align: 'left' };
+  }
+  if (c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98') {
+    const dy = t.y < c.y ? 7 : -7;
+    return { dx: 5, dy, sz: 8, align: 'left' };
+  }
+  if (c.type === 'M_MOT_3P') {
+    return { dx: -4, dy: 11, sz: 8, align: 'right' };
+  }
+  if (c.type === 'KM_BOBINE' || c.type === 'H_VOYANT') {
+    const dy = t.y < c.y ? 6 : -6;
+    return { dx: 5, dy, sz: 7.5, align: 'left' };
+  }
+  const dy = t.y < c.y ? 10 : -10;
+  return { dx: -4, dy, sz: 7.5, align: 'right' };
+}
+
+function getTermLabelBox(c, t) {
+  if (!t || !t.n) return null;
+  const spec = getDefaultTermLabelSpec(c, t);
+  const custom = (c.termOffsets && c.termOffsets[t.i]) ? c.termOffsets[t.i] : null;
+  const dx = (custom && typeof custom.dx === 'number') ? custom.dx : spec.dx;
+  const dy = (custom && typeof custom.dy === 'number') ? custom.dy : spec.dy;
+  const x = t.x + dx;
+  const y = t.y + dy;
+  const bw = Math.max(14, String(t.n).length * 5.5 + 6);
+  const bh = 12;
+  const bx = spec.align === 'left' ? (x - 2) : (spec.align === 'center' ? (x - bw / 2) : (x - bw + 2));
+  const by = y - 6;
+  return { x, y, dx, dy, sz: spec.sz, align: spec.align, bx, by, bw, bh, idx: t.i, term: t };
+}
+
+function getTerms(c) {
+  const def = SYMBOLS[c.type];
+  if (!def) return [];
+  const rad = ((c.rot || 0) * Math.PI) / 180;
+  const cos = Math.round(Math.cos(rad)), sin = Math.round(Math.sin(rad));
+  const customArr = c.customTerms ? c.customTerms.split(',').map(s => s.trim()) : null;
+  return def.terms.map((t, i) => ({
+    i,
+    n: (customArr && customArr[i] !== undefined) ? customArr[i] : t.n,
+    x: c.x + (t.x * cos - t.y * sin),
+    y: c.y + (t.x * sin + t.y * cos)
+  }));
+}
+
+function addComp(type, x, y, label, sub = null, rot = 0, customTerms = null) {
+  const def = SYMBOLS[type];
+  const defaultLbl = type === 'ALIM_3P'
+    ? '3×400V + PE'
+    : (def.pref ? (def.pref + (state.comps.filter(k => SYMBOLS[k.type]?.pref === def.pref).length + 1)) : '');
+  const c = {
+    id: 'c' + Math.random().toString(36).slice(2, 8),
+    type, x: Math.round(x), y: Math.round(y), rot,
+    label: label !== undefined ? label : defaultLbl,
+    sub: sub !== null ? sub : def.sub,
+    customTerms: customTerms || null,
+    lblDx: null,
+    lblDy: null,
+    termOffsets: null
+  };
+  state.comps.push(c);
+  return c;
+}
+
+function hasHorizontalOverlap(yLevel, x1, x2) {
+  const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+  for (const w of state.wires) {
+    const pts = wirePoints(w);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (a[1] === b[1] && Math.abs(a[1] - yLevel) < 6) {
+        const wMin = Math.min(a[0], b[0]), wMax = Math.max(a[0], b[0]);
+        if (Math.max(minX, wMin) < Math.min(maxX, wMax)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function computeSmartMidY(c1, t1Idx, c2, t2Idx, requestedMidY = null) {
+  if (requestedMidY !== null && requestedMidY !== undefined) return requestedMidY;
+  const p1 = getTerms(c1)[t1Idx], p2 = getTerms(c2)[t2Idx];
+  if (!p1 || !p2 || p1.x === p2.x) return null;
+
+  const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+
+  if (p1.y === p2.y) {
+    const hitsOtherTerm = state.comps.some(c =>
+      getTerms(c).some(t => t.y === p1.y && t.x > minX && t.x < maxX)
+    );
+    if (!hitsOtherTerm && !hasHorizontalOverlap(p1.y, minX, maxX)) return null;
+
+    const dir = (p1.y <= c1.y) ? -1 : 1;
+    for (let step = 1; step <= 8; step++) {
+      const candY = p1.y + dir * (step * 16 + 12);
+      if (!hasHorizontalOverlap(candY, minX, maxX)) return candY;
+    }
+    return p1.y + dir * 40;
+  }
+
+  const baseY = snap((p1.y + p2.y) / 2);
+  if (!hasHorizontalOverlap(baseY, minX, maxX)) return baseY;
+  for (let step = 1; step <= 6; step++) {
+    for (const sgn of [-1, 1]) {
+      const candY = baseY + sgn * step * 16;
+      if (!hasHorizontalOverlap(candY, minX, maxX)) return candY;
+    }
+  }
+  return baseY;
+}
+
+function addWire(c1, t1, c2, t2, style = 'CMD', midY = null, midX = null) {
+  const finalMidY = (midX !== null && midX !== undefined) ? null : computeSmartMidY(c1, t1, c2, t2, midY);
+  const newW = {
+    id: 'w' + Math.random().toString(36).slice(2, 8),
+    c1: c1.id, t1, c2: c2.id, t2, style,
+    midY: finalMidY,
+    midX: midX !== undefined ? midX : null,
+    num: null,
+    numDx: null,
+    numDy: null
+  };
+  state.wires.push(newW);
+  if (state.showWireNumbers) {
+    computeEquipotentialWireNumbers();
+  }
+  return newW;
+}
+
+function getEquipotentialWires(seedWire) {
+  if (!seedWire) return [];
+  const adj = buildWireAdjacencyMap();
+  const visited = new Set([seedWire.id]);
+  const queue = [seedWire];
+  const result = [seedWire];
+  while (queue.length > 0) {
+    const cur = queue.shift();
+    const neighbors = adj.get(cur.id) || [];
+    for (const nb of neighbors) {
+      if (!visited.has(nb.id)) {
+        visited.add(nb.id);
+        result.push(nb);
+        queue.push(nb);
+      }
+    }
+  }
+  return result;
+}
+
+function buildWireAdjacencyMap() {
+  const adj = new Map();
+  const elecWires = state.wires.filter(w => w.style !== 'MECH');
+  elecWires.forEach(w => adj.set(w.id, []));
+
+  const wireMeta = elecWires.map(w => {
+    const pts = wirePoints(w);
+    return { w, pts };
+  });
+
+  const passThroughComps = state.comps
+    .filter(c => c.type === 'BORNE' || c.type === 'PT_CONN')
+    .map(c => ({ id: c.id, terms: getTerms(c) }));
+
+  for (let i = 0; i < wireMeta.length; i++) {
+    for (let j = i + 1; j < wireMeta.length; j++) {
+      const A = wireMeta[i], B = wireMeta[j];
+      let connected = false;
+
+      if ((A.w.c1 === B.w.c1 && A.w.t1 === B.w.t1) ||
+          (A.w.c1 === B.w.c2 && A.w.t1 === B.w.t2) ||
+          (A.w.c2 === B.w.c1 && A.w.t2 === B.w.t1) ||
+          (A.w.c2 === B.w.c2 && A.w.t2 === B.w.t2)) {
+        connected = true;
+      }
+
+      if (!connected) {
+        const compsA = [A.w.c1, A.w.c2];
+        const compsB = [B.w.c1, B.w.c2];
+        for (const cid of compsA) {
+          if (compsB.includes(cid)) {
+            const sc = state.comps.find(c => c.id === cid);
+            if (sc && (sc.type === 'PT_CONN' || sc.type === 'BORNE')) {
+              connected = true;
+              break;
+            }
+          }
+        }
+      }
+
+      if (!connected && A.pts.length >= 2 && B.pts.length >= 2) {
+        const endsA = [A.pts[0], A.pts[A.pts.length - 1]];
+        const endsB = [B.pts[0], B.pts[B.pts.length - 1]];
+        for (const ptc of passThroughComps) {
+          const touchA = endsA.some(([ax, ay]) => ptc.terms.some(t => Math.hypot(t.x - ax, t.y - ay) <= 3));
+          const touchB = endsB.some(([bx, by]) => ptc.terms.some(t => Math.hypot(t.x - bx, t.y - by) <= 3));
+          if (touchA && touchB) {
+            connected = true;
+            break;
+          }
+        }
+      }
+
+      if (!connected && A.pts.length >= 2 && B.pts.length >= 2) {
+        const endsA = [A.pts[0], A.pts[A.pts.length - 1]];
+        const endsB = [B.pts[0], B.pts[B.pts.length - 1]];
+        for (const [px, py] of endsA) {
+          for (let s = 0; s < B.pts.length - 1; s++) {
+            if (distToSegment(px, py, B.pts[s][0], B.pts[s][1], B.pts[s + 1][0], B.pts[s + 1][1]) <= 1.5) {
+              connected = true; break;
+            }
+          }
+          if (connected) break;
+        }
+        if (!connected) {
+          for (const [px, py] of endsB) {
+            for (let s = 0; s < A.pts.length - 1; s++) {
+              if (distToSegment(px, py, A.pts[s][0], A.pts[s][1], A.pts[s + 1][0], A.pts[s + 1][1]) <= 1.5) {
+                connected = true; break;
+              }
+            }
+            if (connected) break;
+          }
+        }
+      }
+
+      if (connected) {
+        adj.get(A.w.id).push(B.w);
+        adj.get(B.w.id).push(A.w);
+      }
+    }
+  }
+  return adj;
+}
+
+function computeEquipotentialWireNumbers() {
+  const elecWires = state.wires.filter(w => w.style !== 'MECH');
+  state.wires.forEach(w => {
+    if (w.style === 'MECH') w.num = null;
+  });
+  if (elecWires.length === 0) return 0;
+
+  const adj = buildWireAdjacencyMap();
+  const visited = new Set();
+  const groups = [];
+
+  for (const w of elecWires) {
+    if (visited.has(w.id)) continue;
+    const comp = [];
+    const queue = [w];
+    visited.add(w.id);
+    while (queue.length > 0) {
+      const cur = queue.shift();
+      comp.push(cur);
+      const neighbors = adj.get(cur.id) || [];
+      for (const nb of neighbors) {
+        if (!visited.has(nb.id)) {
+          visited.add(nb.id);
+          queue.push(nb);
+        }
+      }
+    }
+
+    let minX = Infinity, minY = Infinity;
+    let isPower = false;
+    comp.forEach(cw => {
+      if (cw.style === 'PHASE' || cw.style === 'NEUTRAL' || cw.style === 'PE') isPower = true;
+      wirePoints(cw).forEach(([px, py]) => {
+        if (py < minY - 4 || (Math.abs(py - minY) <= 4 && px < minX)) {
+          minY = py;
+          minX = px;
+        }
+      });
+    });
+
+    groups.push({ wires: comp, minX, minY, isPower });
+  }
+
+  groups.sort((a, b) => {
+    if (a.isPower !== b.isPower) return a.isPower ? -1 : 1;
+    if (Math.abs(a.minY - b.minY) > 14) return a.minY - b.minY;
+    return a.minX - b.minX;
+  });
+
+  let numCounter = 1;
+  groups.forEach(g => {
+    const isAllPE = g.wires.every(w => w.style === 'PE');
+    const label = isAllPE ? 'PE' : String(numCounter++);
+    g.wires.forEach(w => {
+      w.num = label;
+    });
+  });
+
+  return groups.length;
+}
+
+function handleAutoNumberWires() {
+  if (state.wires.length === 0) {
+    showToast('⚠️ Aucun conducteur à numéroter sur le schéma');
+    return;
+  }
+  const alreadyNumbered = state.wires.some(w => w.num !== null && w.num !== undefined && String(w.num) !== '');
+  if (!state.showWireNumbers) {
+    pushHistory('Numérotation automatique des fils');
+    state.showWireNumbers = true;
+    const count = computeEquipotentialWireNumbers();
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+    showToast(`🔢 ${count} équipotentielle(s) numérotée(s) automatiquement`);
+  } else if (alreadyNumbered) {
+    pushHistory('Masquage numéros des fils');
+    state.showWireNumbers = false;
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+    showToast('👁️ Numérotation des fils masquée (cliquez à nouveau pour afficher)');
+  } else {
+    pushHistory('Numérotation automatique des fils');
+    const count = computeEquipotentialWireNumbers();
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+    showToast(`🔢 ${count} équipotentielle(s) numérotée(s)`);
+  }
+}
+
+function clearAllWireNumbers() {
+  if (!state.wires.some(w => w.num !== null && w.num !== undefined)) return;
+  pushHistory('Effacement des numéros de fils');
+  state.wires.forEach(w => {
+    w.num = null;
+    w.numDx = null;
+    w.numDy = null;
+  });
+  state.showWireNumbers = false;
+  updateWireNumButtonUI();
+  drawAll();
+  saveToLocalStorage();
+  showToast('🧹 Numérotation des fils effacée');
+}
+
+function segmentHitsRect(x1, y1, x2, y2, rx1, ry1, rx2, ry2) {
+  if (Math.max(x1, x2) < rx1 || Math.min(x1, x2) > rx2 || Math.max(y1, y2) < ry1 || Math.min(y1, y2) > ry2) {
+    return false;
+  }
+  if (x1 === x2 || y1 === y2) return true;
+  const cx = (rx1 + rx2) / 2, cy = (ry1 + ry2) / 2;
+  return distToSegment(cx, cy, x1, y1, x2, y2) <= Math.hypot(rx2 - rx1, ry2 - ry1) / 2;
+}
+
+function getWireNumBox(w) {
+  if (!state.showWireNumbers || !w || w.num === null || w.num === undefined || String(w.num).trim() === '') return null;
+  const pts = wirePoints(w);
+  if (pts.length < 2) return null;
+
+  const s = String(w.num);
+  const bw = Math.max(10, s.length * 5.4 + 3);
+  const bh = 10;
+
+  let bestIdx = 0, bestLen = -1;
+  for (let i = 0; i < pts.length - 1; i++) {
+    const len = Math.hypot(pts[i + 1][0] - pts[i][0], pts[i + 1][1] - pts[i][1]);
+    if (len > bestLen) {
+      bestLen = len;
+      bestIdx = i;
+    }
+  }
+  if (bestLen < 2) return null;
+
+  const refP1 = pts[bestIdx], refP2 = pts[bestIdx + 1];
+  const baseX = (refP1[0] + refP2[0]) / 2;
+  const baseY = (refP1[1] + refP2[1]) / 2;
+
+  if (typeof w.numDx === 'number' && typeof w.numDy === 'number') {
+    const x = baseX + w.numDx;
+    const y = baseY + w.numDy;
+    return {
+      x, y, baseX, baseY, dx: w.numDx, dy: w.numDy,
+      bx: x - bw / 2, by: y - bh / 2, bw, bh, text: s
+    };
+  }
+
+  const allSegs = [];
+  for (const ow of state.wires) {
+    const op = wirePoints(ow);
+    for (let i = 0; i < op.length - 1; i++) {
+      if (Math.hypot(op[i + 1][0] - op[i][0], op[i + 1][1] - op[i][1]) >= 1) {
+        allSegs.push([op[i][0], op[i][1], op[i + 1][0], op[i + 1][1]]);
+      }
+    }
+  }
+
+  const fracs = [0.5, 0.36, 0.64, 0.26, 0.74, 0.42, 0.58];
+  let bestCand = null;
+  let bestScore = Infinity;
+
+  for (let i = 0; i < pts.length - 1; i++) {
+    const p1 = pts[i], p2 = pts[i + 1];
+    const segLen = Math.hypot(p2[0] - p1[0], p2[1] - p1[1]);
+    if (segLen < 2) continue;
+    const isHoriz = Math.abs(p2[0] - p1[0]) >= Math.abs(p2[1] - p1[1]);
+
+    const perpOffsets = isHoriz
+      ? [{ ox: 0, oy: -9, pref: 0 }, { ox: 0, oy: 10, pref: 4 }]
+      : [{ ox: -(bw / 2 + 5.5), oy: 0, pref: 0 }, { ox: (bw / 2 + 5.5), oy: 0, pref: 4 }];
+
+    for (const f of fracs) {
+      const sx = p1[0] + (p2[0] - p1[0]) * f;
+      const sy = p1[1] + (p2[1] - p1[1]) * f;
+
+      for (const po of perpOffsets) {
+        const cx = sx + po.ox;
+        const cy = sy + po.oy;
+        const rx1 = cx - bw / 2 - 2;
+        const ry1 = cy - bh / 2 - 1.5;
+        const rx2 = cx + bw / 2 + 2;
+        const ry2 = cy + bh / 2 + 1.5;
+
+        let score = po.pref + Math.abs(f - 0.5) * 35 - Math.min(segLen, 70) * 0.4;
+
+        for (let k = 0; k < allSegs.length; k++) {
+          const sg = allSegs[k];
+          if (segmentHitsRect(sg[0], sg[1], sg[2], sg[3], rx1, ry1, rx2, ry2)) {
+            score += 50000;
+          }
+        }
+
+        for (let k = 0; k < state.comps.length; k++) {
+          const c = state.comps[k];
+          if (c.type === 'BORNE' && Math.hypot(c.x - cx, c.y - cy) < 12) score += 8000;
+          else if (c.type !== 'PT_CONN' && c.type !== 'BORNE' && Math.abs(c.x - cx) < 22 && Math.abs(c.y - cy) < 22) score += 8000;
+          const lb = getLabelBox(c);
+          if (lb && !(rx2 < lb.bx || rx1 > lb.bx + lb.bw || ry2 < lb.by || ry1 > lb.by + lb.bh)) {
+            score += 6000;
+          }
+        }
+
+        if (score < bestScore) {
+          bestScore = score;
+          bestCand = { x: cx, y: cy };
+        }
+      }
+    }
+  }
+
+  const finalX = bestCand ? bestCand.x : (baseX - (bw / 2 + 6));
+  const finalY = bestCand ? bestCand.y : (baseY - 9);
+  return {
+    x: finalX,
+    y: finalY,
+    baseX,
+    baseY,
+    dx: finalX - baseX,
+    dy: finalY - baseY,
+    bx: finalX - bw / 2,
+    by: finalY - bh / 2,
+    bw,
+    bh,
+    text: s
+  };
+}
+
+function wirePoints(w) {
+  const a = state.comps.find(c => c.id === w.c1), b = state.comps.find(c => c.id === w.c2);
+  if (!a || !b) return [];
+  const t1 = getTerms(a)[w.t1], t2 = getTerms(b)[w.t2];
+  if (!t1 || !t2) return [];
+  if (typeof w.midX === 'number') {
+    return [[t1.x, t1.y], [w.midX, t1.y], [w.midX, t2.y], [t2.x, t2.y]];
+  }
+  if (typeof w.midY === 'number') {
+    return [[t1.x, t1.y], [t1.x, w.midY], [t2.x, w.midY], [t2.x, t2.y]];
+  }
+  if (w.midY === 'HV') return [[t1.x, t1.y], [t2.x, t1.y], [t2.x, t2.y]];
+  if (w.midY === 'VH') return [[t1.x, t1.y], [t1.x, t2.y], [t2.x, t2.y]];
+  if (t1.x === t2.x || t1.y === t2.y) return [[t1.x, t1.y], [t2.x, t2.y]];
+  const my = snap((t1.y + t2.y) / 2);
+  return [[t1.x, t1.y], [t1.x, my], [t2.x, my], [t2.x, t2.y]];
+}
+
+function drawAll(overrideDpr = null) {
+  const dpr = overrideDpr || window.devicePixelRatio || 1;
+  if (!Number.isFinite(state.zoom) || state.zoom < 0.2) state.zoom = 0.85;
+  if (!Number.isFinite(state.panX)) state.panX = 20;
+  if (!Number.isFinite(state.panY)) state.panY = 15;
+
+  ctx.save();
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.fillStyle = '#cbd5e1';
+  ctx.fillRect(0, 0, viewW, viewH);
+
+  ctx.translate(state.panX, state.panY);
+  ctx.scale(state.zoom, state.zoom);
+
+  const SW = 1200, SH = 820;
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, SW, SH);
+
+  ctx.fillStyle = '#e2e8f0';
+  for (let x = 40; x <= SW - 40; x += GRID) {
+    for (let y = 40; y <= SH - 80; y += GRID) ctx.fillRect(x - 0.8, y - 0.8, 1.6, 1.6);
+  }
+
+  ctx.strokeStyle = '#0f172a';
+  ctx.lineWidth = 1.4;
+  ctx.strokeRect(16, 16, SW - 32, SH - 32);
+  ctx.strokeRect(34, 34, SW - 68, SH - 94);
+
+  const cols = ['A','B','C','D','E','F','G','H','K','L','M','N','O','P','Q'];
+  const colW = (SW - 68) / cols.length;
+  cols.forEach((lbl, idx) => {
+    const cx = 34 + idx * colW;
+    if (idx > 0) L(ctx, cx, 16, cx, 34);
+    TXT(ctx, lbl, cx + colW / 2, 25, 9.5, '#0f172a');
+  });
+
+  const rows = 11;
+  const rowH = (SH - 94) / rows;
+  for (let r = 0; r < rows; r++) {
+    const ry = 34 + r * rowH;
+    if (r > 0) {
+      L(ctx, 16, ry, 34, ry);
+      L(ctx, SW - 34, ry, SW - 16, ry);
+    }
+    TXT(ctx, String(r + 1), 25, ry + rowH / 2, 9, '#0f172a');
+    TXT(ctx, String(r + 1), SW - 25, ry + rowH / 2, 9, '#0f172a');
+  }
+
+  const cy = SH - 60;
+  L(ctx, 16, cy, SW - 16, cy);
+  L(ctx, 260, cy, 260, SH - 16);
+  L(ctx, 880, cy, 880, SH - 16);
+  L(ctx, 1130, cy, 1130, SH - 16);
+  L(ctx, 880, cy + 15, 1130, cy + 15);
+  L(ctx, 880, cy + 30, 1130, cy + 30);
+  L(ctx, 1130, cy + 22, SW - 16, cy + 22);
+
+  TXT(ctx, state.cartouche.school || 'LP XXXX', 138, cy + 15, 12, '#0f172a', 'center');
+  TXT(ctx, 'CBUSSAC Schéma', 138, cy + 33, 9.5, '#1d4ed8', 'center');
+  TXT(ctx, state.cartouche.title || 'SCHEMA ELECTRIQUE', 570, cy + 22, 13.5, '#0f172a', 'center');
+  TXT(ctx, 'Dessiné le : ' + (state.cartouche.date || ''), 890, cy + 7.5, 8.5, '#0f172a', 'left');
+  TXT(ctx, 'Modifié le :', 890, cy + 22.5, 8.5, '#0f172a', 'left');
+  TXT(ctx, 'Par : ' + (state.cartouche.author || ''), 890, cy + 37.5, 8.5, '#0f172a', 'left');
+  TXT(ctx, 'Folio', 1157, cy + 11, 8, '#475569', 'center');
+  TXT(ctx, state.cartouche.folio || '01 / 01', 1157, cy + 33, 9.5, '#0f172a', 'center');
+
+  if (state.presetName === 'pdf_2sens' || state.presetName === 'pdf_1sens') {
+    TXT(ctx, '24V', 658, 60, 8.5, '#0f172a', 'right');
+  }
+
+  const nodeMap = new Map();
+  const allSegments = [];
+  const markNode = (x, y, col, weight = 1) => {
+    const k = `${x},${y}`;
+    nodeMap.set(k, { x, y, col, c: (nodeMap.get(k)?.c || 0) + weight });
+  };
+
+  state.wires.forEach(w => {
+    const pts = wirePoints(w);
+    if (pts.length < 2) return;
+    const st = WIRE_STYLES[w.style] || WIRE_STYLES.CMD;
+    const isSel = isWireSelected(w);
+    const isHov = (state.hoverWireSeg && state.hoverWireSeg.wire === w);
+    ctx.save();
+    ctx.strokeStyle = (state.tool === 'delete' && isHov) ? '#ef4444' : (isSel ? '#2563eb' : (isHov ? '#0284c7' : st.col));
+    ctx.lineWidth = (isSel || isHov) ? st.w + 1.5 : st.w;
+    ctx.setLineDash(st.d);
+    POLY(ctx, pts);
+
+    if (isSel || isHov) {
+      const segIdx = isHov ? state.hoverWireSeg.segIdx : Math.floor((pts.length - 1) / 2);
+      const pA = pts[Math.min(segIdx, pts.length - 2)];
+      const pB = pts[Math.min(segIdx + 1, pts.length - 1)];
+      if (pA && pB) {
+        const mx = (pA[0] + pB[0]) / 2;
+        const my = (pA[1] + pB[1]) / 2;
+        ctx.setLineDash([]);
+        ctx.lineWidth = 1.4;
+        ctx.strokeStyle = '#ffffff';
+        C(ctx, mx, my, 4.5, state.tool === 'delete' ? '#ef4444' : '#2563eb');
+      }
+    }
+    ctx.restore();
+    markNode(pts[0][0], pts[0][1], st.col, 1);
+    markNode(pts[pts.length - 1][0], pts[pts.length - 1][1], st.col, 1);
+    for (let i = 0; i < pts.length - 1; i++) {
+      allSegments.push({ x1: pts[i][0], y1: pts[i][1], x2: pts[i + 1][0], y2: pts[i + 1][1], col: st.col, pts });
+    }
+  });
+
+  state.wires.forEach(w => {
+    const pts = wirePoints(w);
+    const st = WIRE_STYLES[w.style] || WIRE_STYLES.CMD;
+    pts.forEach(([px, py]) => {
+      for (const seg of allSegments) {
+        if (seg.pts === pts) continue;
+        const onVert = (seg.x1 === seg.x2 && px === seg.x1 && py > Math.min(seg.y1, seg.y2) && py < Math.max(seg.y1, seg.y2));
+        const onHoriz = (seg.y1 === seg.y2 && py === seg.y1 && px > Math.min(seg.x1, seg.x2) && px < Math.max(seg.x1, seg.x2));
+        if (onVert || onHoriz) {
+          markNode(px, py, st.col, 3);
+        }
+      }
+    });
+  });
+
+  nodeMap.forEach(nd => {
+    if (nd.c >= 3) C(ctx, nd.x, nd.y, 3, nd.col);
+  });
+
+  if (state.showWireNumbers) {
+    state.wires.forEach(w => {
+      const nbox = getWireNumBox(w);
+      if (!nbox) return;
+      const isHov = (state.hoverWireNum === w) || (dragWireNum && dragWireNum.wire === w) || isWireSelected(w);
+      if (isHov) {
+        ctx.save();
+        ctx.lineWidth = 0.9;
+        ctx.strokeStyle = '#f59e0b';
+        DASH(ctx, [2, 2], () => R(ctx, nbox.bx, nbox.by, nbox.bw, nbox.bh, 'rgba(245,158,11,0.14)'));
+        ctx.restore();
+      }
+      ctx.save();
+      ctx.font = 'bold 8.5px sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 2.5;
+      ctx.lineJoin = 'round';
+      ctx.strokeText(nbox.text, nbox.x, nbox.y);
+      ctx.fillStyle = isHov ? '#b45309' : '#1d4ed8';
+      ctx.fillText(nbox.text, nbox.x, nbox.y);
+      ctx.restore();
+    });
+  }
+
+  if (state.tool === 'wire' && state.wireStart) {
+    const st = WIRE_STYLES[state.wireType] || WIRE_STYLES.CMD;
+    const tx = state.hoverTerm ? state.hoverTerm.x : snap(state.mouseW.x);
+    const ty = state.hoverTerm ? state.hoverTerm.y : snap(state.mouseW.y);
+    const my = snap((state.wireStart.y + ty) / 2);
+    DASH(ctx, [5, 4], () => {
+      ctx.strokeStyle = st.col; ctx.lineWidth = st.w;
+      POLY(ctx, [[state.wireStart.x, state.wireStart.y], [state.wireStart.x, my], [tx, my], [tx, ty]]);
+    });
+  }
+
+  state.comps.forEach(c => drawSingleComp(c, false));
+
+  if (state.tool === 'place' && state.placeType) {
+    ctx.save(); ctx.globalAlpha = 0.55;
+    drawSingleComp({ type: state.placeType, x: snap(state.mouseW.x), y: snap(state.mouseW.y), rot: 0, label: '', sub: '' }, true);
+    ctx.restore();
+  }
+
+  if (state.tool === 'text') {
+    ctx.save();
+    ctx.globalAlpha = 0.65;
+    const gx = Math.round(state.mouseW.x / 10) * 10;
+    const gy = Math.round(state.mouseW.y / 10) * 10;
+    drawSingleComp({ type: 'TEXTE', x: gx, y: gy, rot: 0, label: 'Texte...', textSize: 13, textColor: '#1d4ed8', textBox: true }, true);
+    ctx.restore();
+  }
+
+  if (state.hoverTerm) {
+    ctx.save(); ctx.strokeStyle = '#2563eb'; ctx.lineWidth = 2;
+    C(ctx, state.hoverTerm.x, state.hoverTerm.y, 7, 'rgba(59,130,246,0.22)');
+    ctx.restore();
+  }
+
+  if (selBox) {
+    const rx = Math.min(selBox.x1, selBox.x2);
+    const ry = Math.min(selBox.y1, selBox.y2);
+    const rw = Math.abs(selBox.x2 - selBox.x1);
+    const rh = Math.abs(selBox.y2 - selBox.y1);
+    ctx.save();
+    ctx.fillStyle = 'rgba(37, 99, 235, 0.12)';
+    ctx.fillRect(rx, ry, rw, rh);
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 1.4 / state.zoom;
+    ctx.setLineDash([5 / state.zoom, 3 / state.zoom]);
+    ctx.strokeRect(rx, ry, rw, rh);
+    ctx.restore();
+  }
+
+  ctx.restore();
+}
+
+function drawSingleComp(c, isGhost) {
+  const def = SYMBOLS[c.type];
+  if (!def) return;
+  const sel = isCompSelected(c);
+  const isDelHov = (state.tool === 'delete' && state.hoverComp === c);
+
+  if (c.type === 'TEXTE') {
+    const tb = getTextCompBounds(c);
+    ctx.save();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(((c.rot || 0) * Math.PI) / 180);
+
+    if (tb.boxed) {
+      ctx.strokeStyle = isDelHov ? '#ef4444' : (sel ? '#2563eb' : tb.color);
+      ctx.lineWidth = 1.3;
+      R(ctx, -tb.w / 2, -tb.h / 2, tb.w, tb.h, '#ffffff');
+    }
+
+    if (sel || state.hoverComp === c || isDelHov) {
+      DASH(ctx, [3, 3], () => {
+        ctx.strokeStyle = isDelHov ? '#ef4444' : (sel ? '#2563eb' : '#f59e0b');
+        ctx.lineWidth = 1.2;
+        R(ctx, -tb.w / 2 - 4, -tb.h / 2 - 4, tb.w + 8, tb.h + 8, isDelHov ? 'rgba(239,68,68,0.15)' : (sel ? 'rgba(37,99,235,0.08)' : 'rgba(245,158,11,0.10)'));
+      });
+    }
+
+    const startY = -((tb.lines.length - 1) * tb.lineHeight) / 2;
+    tb.lines.forEach((line, idx) => {
+      TXT(ctx, line, 0, startY + idx * tb.lineHeight, tb.fontSize, isDelHov ? '#ef4444' : tb.color, 'center');
+    });
+
+    ctx.restore();
+    return;
+  }
+
+  const maxX = def.terms.reduce((m, t) => Math.max(m, Math.abs(t.x)), 0);
+  const maxY = def.terms.reduce((m, t) => Math.max(m, Math.abs(t.y)), 0);
+  const boxH = Math.max(36, maxY + 8);
+
+  ctx.save();
+  ctx.translate(c.x, c.y);
+  ctx.rotate(((c.rot || 0) * Math.PI) / 180);
+
+  if (sel || state.hoverComp === c || isDelHov) {
+    if (c.type === 'BORNE' || c.type === 'PT_CONN') {
+      ctx.save();
+      ctx.strokeStyle = isDelHov ? '#ef4444' : (sel ? '#2563eb' : '#f59e0b');
+      ctx.lineWidth = 1.5;
+      C(ctx, 0, 0, 9, isDelHov ? 'rgba(239,68,68,0.25)' : (sel ? 'rgba(37,99,235,0.15)' : 'rgba(245,158,11,0.18)'));
+      ctx.restore();
+    } else if (sel || isDelHov) {
+      DASH(ctx, [4, 3], () => {
+        ctx.strokeStyle = isDelHov ? '#ef4444' : '#3b82f6';
+        ctx.lineWidth = 1.4;
+        R(ctx, -(maxX + 22), -boxH, (maxX + 22) * 2, boxH * 2, isDelHov ? 'rgba(239,68,68,0.15)' : 'rgba(59,130,246,0.08)');
+      });
+    }
+  }
+
+  ctx.strokeStyle = isDelHov ? '#ef4444' : (sel ? '#1d4ed8' : '#0f172a');
+  ctx.lineWidth = 1.8; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  def.draw(ctx, c, isGhost);
+  ctx.restore();
+
+  if (isGhost || c.type === 'PT_CONN') return;
+
+  const lbox = getLabelBox(c);
+  if (lbox) {
+    const isHoverLbl = (state.hoverLabel === c || dragLabelComp === c);
+    if (sel || isHoverLbl) {
+      ctx.save();
+      ctx.strokeStyle = isHoverLbl ? '#f59e0b' : '#60a5fa';
+      ctx.lineWidth = 1;
+      DASH(ctx, [2, 2], () => R(ctx, lbox.bx, lbox.by, lbox.bw, lbox.bh, isHoverLbl ? 'rgba(245,158,11,0.14)' : 'rgba(59,130,246,0.08)'));
+      ctx.restore();
+    }
+    if (c.label) {
+      const yLbl = (c.type !== 'BORNE' && c.type !== 'M_MOT_3P' && c.type !== 'ALIM_3P' && c.sub) ? lbox.y - 4 : lbox.y;
+      TXT(ctx, c.label, lbox.x, yLbl, lbox.sz, (sel || isHoverLbl) ? '#1d4ed8' : '#0f172a', lbox.align || 'right');
+    }
+    if (c.sub) {
+      TXT(ctx, c.sub, lbox.x, lbox.y + 9, 8.5, '#475569', lbox.align || 'right');
+    }
+  }
+
+  getTerms(c).forEach(t => {
+    if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'KM_CONT_3P' || c.type === 'T_TRANSFO_1' || c.type === 'T_TRANSFO_2' || c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98' || c.type === 'BORNE' || c.type === 'TERRE' || c.type === 'DOM_VV' || c.type === 'DOM_INTER' || c.type === 'DOM_TL') {
+      ctx.save(); ctx.strokeStyle = '#ef4444';
+      R(ctx, t.x - 3, t.y - 3, 6, 6, '#ef4444');
+      ctx.restore();
+    } else {
+      ctx.save(); ctx.strokeStyle = '#dc2626';
+      C(ctx, t.x, t.y, 1.9, '#ef4444');
+      ctx.restore();
+    }
+    if (t.n) {
+      const tbox = getTermLabelBox(c, t);
+      if (tbox) {
+        const isHovTermLbl = (state.hoverTermLabel && state.hoverTermLabel.comp === c && state.hoverTermLabel.idx === t.i) ||
+                             (dragTermLabel && dragTermLabel.comp === c && dragTermLabel.idx === t.i);
+        if (sel || isHovTermLbl) {
+          ctx.save();
+          ctx.strokeStyle = isHovTermLbl ? '#f59e0b' : '#93c5fd';
+          ctx.lineWidth = 0.9;
+          DASH(ctx, [2, 2], () => R(ctx, tbox.bx, tbox.by, tbox.bw, tbox.bh, isHovTermLbl ? 'rgba(245,158,11,0.15)' : 'rgba(59,130,246,0.06)'));
+          ctx.restore();
+        }
+        TXT(ctx, t.n, tbox.x, tbox.y, tbox.sz, isHovTermLbl ? '#1d4ed8' : '#0f172a', tbox.align);
+      }
+    }
+  });
+}
+
+function renderLibrary() {
+  const grid = document.getElementById('lib-grid');
+  const q = (document.getElementById('search-input')?.value || '').trim().toLowerCase();
+  grid.innerHTML = '';
+
+  Object.entries(SYMBOLS).forEach(([key, def]) => {
+    if (state.cat !== 'ALL' && def.cat !== state.cat) return;
+    if (q && !def.name.toLowerCase().includes(q) && !def.pref.toLowerCase().includes(q)) return;
+
+    const btn = document.createElement('button');
+    const active = ((state.tool === 'place' && state.placeType === key) || (state.tool === 'text' && key === 'TEXTE'));
+    btn.className = `sym-card flex flex-col items-center p-1.5 rounded-lg bg-slate-800/90 border border-slate-700 text-center ${active ? 'active' : ''}`;
+    btn.onclick = () => {
+      if (key === 'TEXTE') {
+        setTool('text');
+      } else {
+        state.placeType = key;
+        setTool('place');
+      }
+      document.getElementById('sidebar').classList.remove('open');
+    };
+
+    const cnv = document.createElement('canvas');
+    cnv.width = 52; cnv.height = 52;
+    cnv.className = 'bg-white rounded border border-slate-300 mb-1';
+    const g = cnv.getContext('2d');
+    g.save();
+    g.translate(26, 26);
+    const maxX = def.terms.reduce((m, t) => Math.max(m, Math.abs(t.x)), 0);
+    const maxY = def.terms.reduce((m, t) => Math.max(m, Math.abs(t.y)), 0);
+    const sc = (maxX >= 50 || maxY >= 55) ? 0.34 : (maxX >= 35 ? 0.42 : 0.52);
+    g.scale(sc, sc);
+    g.strokeStyle = '#0f172a'; g.lineWidth = 2.4; g.lineCap = 'round'; g.lineJoin = 'round';
+    def.draw(g);
+    def.terms.forEach(t => { g.fillStyle = '#ef4444'; g.beginPath(); g.arc(t.x, t.y, 4, 0, Math.PI * 2); g.fill(); });
+    g.restore();
+
+    const sp = document.createElement('span');
+    sp.className = 'text-[10.5px] font-medium text-slate-200 leading-tight line-clamp-2';
+    sp.textContent = def.name;
+
+    btn.appendChild(cnv);
+    btn.appendChild(sp);
+    grid.appendChild(btn);
+  });
+}
+
+function findTermAt(wx, wy, rad = 13) {
+  for (const c of state.comps) {
+    for (const t of getTerms(c)) {
+      if (Math.hypot(t.x - wx, t.y - wy) <= rad) return { comp: c, idx: t.i, x: t.x, y: t.y };
+    }
+  }
+  return null;
+}
+
+function findLabelAt(wx, wy) {
+  for (let i = state.comps.length - 1; i >= 0; i--) {
+    const c = state.comps[i];
+    if (c.type === 'BORNE' && Math.hypot(c.x - wx, c.y - wy) <= 9) continue;
+    const b = getLabelBox(c);
+    if (!b) continue;
+    if (wx >= b.bx - 3 && wx <= b.bx + b.bw + 3 && wy >= b.by - 3 && wy <= b.by + b.bh + 3) {
+      return c;
+    }
+  }
+  return null;
+}
+
+function findTermLabelAt(wx, wy) {
+  for (let i = state.comps.length - 1; i >= 0; i--) {
+    const c = state.comps[i];
+    const terms = getTerms(c);
+    for (const t of terms) {
+      if (!t.n) continue;
+      if (Math.hypot(t.x - wx, t.y - wy) <= 5) continue;
+      const tb = getTermLabelBox(c, t);
+      if (tb && wx >= tb.bx - 2 && wx <= tb.bx + tb.bw + 2 && wy >= tb.by - 2 && wy <= tb.by + tb.bh + 2) {
+        return { comp: c, idx: t.i, box: tb };
+      }
+    }
+  }
+  return null;
+}
+
+function findCompAt(wx, wy) {
+  for (let i = state.comps.length - 1; i >= 0; i--) {
+    const c = state.comps[i];
+    if (c.type === 'TEXTE') {
+      const tb = getTextCompBounds(c);
+      const rad = -((c.rot || 0) * Math.PI) / 180;
+      const dx = wx - c.x, dy = wy - c.y;
+      const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+      const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+      if (Math.abs(lx) <= tb.w / 2 + 4 && Math.abs(ly) <= tb.h / 2 + 4) return c;
+      continue;
+    }
+    const hitR = c.type === 'PT_CONN' ? 6 : (c.type === 'BORNE' ? 12 : 28);
+    if (Math.hypot(c.x - wx, c.y - wy) <= hitR) return c;
+  }
+  return null;
+}
+
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const lenSq = dx * dx + dy * dy;
+  if (lenSq === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * dx + (py - y1) * dy) / lenSq;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+function findWireSegmentAt(wx, wy, tol = 8) {
+  for (let i = state.wires.length - 1; i >= 0; i--) {
+    const w = state.wires[i];
+    const pts = wirePoints(w);
+    for (let j = 0; j < pts.length - 1; j++) {
+      const p1 = pts[j], p2 = pts[j + 1];
+      if (Math.hypot(p2[0] - p1[0], p2[1] - p1[1]) < 1) continue;
+      if (distToSegment(wx, wy, p1[0], p1[1], p2[0], p2[1]) <= tol) {
+        const orient = (p1[1] === p2[1]) ? 'H' : 'V';
+        return { wire: w, segIdx: j, orient, pts };
+      }
+    }
+  }
+  return null;
+}
+
+function findWireNumAt(wx, wy) {
+  if (!state.showWireNumbers) return null;
+  for (let i = state.wires.length - 1; i >= 0; i--) {
+    const w = state.wires[i];
+    const b = getWireNumBox(w);
+    if (!b) continue;
+    if (wx >= b.bx - 2 && wx <= b.bx + b.bw + 2 && wy >= b.by - 2 && wy <= b.by + b.bh + 2) {
+      return w;
+    }
+  }
+  return null;
+}
+
+function startMultiDrag(w) {
+  dragSnapshot = createSnapshot(`Déplacement de ${state.selComps.length} élément(s)`);
+  const selIds = new Set(state.selComps.map(c => c.id));
+  dragMulti = {
+    startX: snap(w.x),
+    startY: snap(w.y),
+    moved: false,
+    compStarts: state.selComps.map(c => ({ comp: c, x: c.x, y: c.y })),
+    wireStarts: state.wires
+      .filter(wr => selIds.has(wr.c1) && selIds.has(wr.c2))
+      .map(wr => ({ wire: wr, midX: wr.midX, midY: wr.midY }))
+  };
+}
+
+function onPointerDown(sx, sy, btn = 0, shiftKey = false) {
+  const w = toWorld(sx, sy);
+  state.mouseW = w;
+
+  if (btn === 1) { isPanning = true; panOrigin = { x: sx - state.panX, y: sy - state.panY }; return; }
+
+  // Clic droit maintenu : rectangle de sélection multiple (ou annulation d'un tracé de fil)
+  if (btn === 2) {
+    if (state.wireStart) { state.wireStart = null; drawAll(); return; }
+    if (!shiftKey) {
+      state.selComp = null;
+      state.selWire = null;
+      state.selComps = [];
+      state.selWires = [];
+    }
+    selBox = {
+      x1: w.x,
+      y1: w.y,
+      x2: w.x,
+      y2: w.y,
+      moved: false,
+      additive: shiftKey,
+      baseComps: [...state.selComps],
+      baseWires: [...state.selWires]
+    };
+    drawAll();
+    return;
+  }
+
+  if (btn !== 0) return;
+
+  if (state.tool === 'delete') {
+    const comp = findCompAt(w.x, w.y);
+    const wireHit = findWireSegmentAt(w.x, w.y, 10);
+    if ((comp && isCompSelected(comp)) || (wireHit && isWireSelected(wireHit.wire))) {
+      if (state.selComps.length + state.selWires.length > 1) {
+        deleteSelected();
+        return;
+      }
+    }
+    if (comp) {
+      pushHistory(`Suppression ${comp.label || comp.type}`);
+      state.comps = state.comps.filter(k => k.id !== comp.id);
+      state.wires = state.wires.filter(k => k.c1 !== comp.id && k.c2 !== comp.id);
+      state.selComps = state.selComps.filter(k => k.id !== comp.id);
+      if (state.selComp === comp) state.selComp = state.selComps[0] || null;
+      if (state.showWireNumbers) computeEquipotentialWireNumbers();
+      showToast(`🗑️ ${comp.label || comp.type} supprimé`);
+      drawAll();
+      saveToLocalStorage();
+      return;
+    }
+    if (wireHit) {
+      pushHistory('Suppression conducteur');
+      state.wires = state.wires.filter(k => k.id !== wireHit.wire.id);
+      state.selWires = state.selWires.filter(k => k.id !== wireHit.wire.id);
+      if (state.selWire === wireHit.wire) state.selWire = state.selWires[0] || null;
+      if (state.showWireNumbers) computeEquipotentialWireNumbers();
+      showToast('🗑️ Conducteur supprimé');
+      drawAll();
+      saveToLocalStorage();
+      return;
+    }
+    return;
+  }
+
+  if (state.tool === 'place' && state.placeType) {
+    if (state.placeType === 'TEXTE') {
+      openTextModal(null, Math.round(w.x / 10) * 10, Math.round(w.y / 10) * 10);
+      return;
+    }
+    pushHistory(`Ajout ${state.placeType}`);
+    state.selComp = addComp(state.placeType, snap(w.x), snap(w.y));
+    state.selComps = [state.selComp];
+    state.selWire = null;
+    state.selWires = [];
+    drawAll();
+    saveToLocalStorage();
+    return;
+  }
+
+  if (state.tool === 'text') {
+    const existing = findCompAt(w.x, w.y);
+    if (existing && existing.type === 'TEXTE') {
+      state.selComp = existing;
+      state.selComps = [existing];
+      openTextModal(existing);
+    } else {
+      openTextModal(null, Math.round(w.x / 10) * 10, Math.round(w.y / 10) * 10);
+    }
+    return;
+  }
+
+  const directBorne = state.tool === 'select'
+    ? state.comps.find(c => (c.type === 'BORNE' || c.type === 'PT_CONN') && Math.hypot(c.x - w.x, c.y - w.y) <= 12)
+    : null;
+
+  const termRadius = state.tool === 'wire' ? 13 : 6;
+  const term = findTermAt(w.x, w.y, termRadius);
+  if (term && !directBorne && (state.tool === 'wire' || (state.tool === 'select' && state.selComps.length <= 1 && term.comp.type !== 'BORNE' && term.comp.type !== 'PT_CONN'))) {
+    if (!state.wireStart) {
+      setTool('wire');
+      state.wireStart = term;
+    } else if (state.wireStart.comp.id !== term.comp.id || state.wireStart.idx !== term.idx) {
+      pushHistory('Tracé conducteur');
+      addWire(state.wireStart.comp, state.wireStart.idx, term.comp, term.idx, state.wireType);
+      state.wireStart = null;
+      saveToLocalStorage();
+    }
+    drawAll();
+    return;
+  }
+
+  if (state.tool === 'wire') { state.wireStart = null; drawAll(); return; }
+
+  if (directBorne) {
+    if (state.selComps.length > 1 && isCompSelected(directBorne) && !shiftKey) {
+      startMultiDrag(w);
+      drawAll();
+      return;
+    }
+    state.selComp = directBorne;
+    state.selComps = [directBorne];
+    state.selWire = null;
+    state.selWires = [];
+    dragSnapshot = createSnapshot(`Déplacement borne ${directBorne.label || directBorne.type}`);
+    dragStartPos = { x: directBorne.x, y: directBorne.y };
+    dragComp = directBorne;
+    const step = 10;
+    const snapB = v => Math.round(v / step) * step;
+    dragOff = { x: snapB(w.x) - directBorne.x, y: snapB(w.y) - directBorne.y };
+    drawAll();
+    return;
+  }
+
+  const termLblHit = findTermLabelAt(w.x, w.y);
+  if (termLblHit) {
+    const c = termLblHit.comp;
+    state.selComp = c;
+    state.selComps = [c];
+    state.selWire = null;
+    state.selWires = [];
+    dragSnapshot = createSnapshot(`Déplacement borne ${termLblHit.box.term.n} (${c.label || c.type})`);
+    dragTermLabel = {
+      comp: c,
+      idx: termLblHit.idx,
+      termX: termLblHit.box.term.x,
+      termY: termLblHit.box.term.y,
+      startDx: termLblHit.box.dx,
+      startDy: termLblHit.box.dy,
+      offX: w.x - termLblHit.box.x,
+      offY: w.y - termLblHit.box.y
+    };
+    drawAll();
+    return;
+  }
+
+  const lblComp = findLabelAt(w.x, w.y);
+  if (lblComp) {
+    state.selComp = lblComp;
+    state.selComps = [lblComp];
+    state.selWire = null;
+    state.selWires = [];
+    const lbox = getLabelBox(lblComp);
+    dragSnapshot = createSnapshot(`Déplacement repère ${lblComp.label || lblComp.type}`);
+    dragLabelComp = lblComp;
+    dragLabelStart = { dx: lbox.dx, dy: lbox.dy };
+    dragLabelOff = { x: w.x - lbox.x, y: w.y - lbox.y };
+    drawAll();
+    return;
+  }
+
+  const wireNumHit = findWireNumAt(w.x, w.y);
+  if (wireNumHit) {
+    state.selWire = wireNumHit;
+    state.selWires = [wireNumHit];
+    state.selComp = null;
+    state.selComps = [];
+    const nbox = getWireNumBox(wireNumHit);
+    dragSnapshot = createSnapshot(`Déplacement n° de fil ${wireNumHit.num}`);
+    dragWireNum = {
+      wire: wireNumHit,
+      baseX: nbox.baseX,
+      baseY: nbox.baseY,
+      startDx: nbox.dx,
+      startDy: nbox.dy,
+      offX: w.x - nbox.x,
+      offY: w.y - nbox.y
+    };
+    drawAll();
+    return;
+  }
+
+  const wireHit = findWireSegmentAt(w.x, w.y, 8);
+  const comp = findCompAt(w.x, w.y);
+
+  if (wireHit && !comp) {
+    const wr = wireHit.wire;
+    if (state.selComps.length > 1 && isWireSelected(wr)) {
+      startMultiDrag(w);
+      drawAll();
+      return;
+    }
+    state.selWire = wr;
+    state.selWires = [wr];
+    state.selComp = null;
+    state.selComps = [];
+    dragSnapshot = createSnapshot('Déplacement conducteur');
+    dragWire = {
+      wire: wr,
+      segIdx: wireHit.segIdx,
+      orient: wireHit.orient,
+      startX: w.x,
+      startY: w.y,
+      origMidY: wr.midY,
+      origMidX: wr.midX
+    };
+    drawAll();
+    return;
+  }
+
+  if (comp) {
+    if (shiftKey) {
+      if (isCompSelected(comp)) {
+        state.selComps = state.selComps.filter(c => c.id !== comp.id);
+      } else {
+        state.selComps.push(comp);
+      }
+      state.selComp = state.selComps[0] || null;
+      drawAll();
+      return;
+    }
+    if (state.selComps.length > 1 && isCompSelected(comp)) {
+      startMultiDrag(w);
+      drawAll();
+      return;
+    }
+    state.selComp = comp;
+    state.selComps = [comp];
+    state.selWire = null;
+    state.selWires = [];
+    dragSnapshot = createSnapshot(`Déplacement ${comp.label || comp.type}`);
+    dragStartPos = { x: comp.x, y: comp.y };
+    dragComp = comp;
+    const step = (comp.type === 'BORNE' || comp.type === 'PT_CONN' || comp.type === 'TEXTE') ? 10 : GRID;
+    const snapC = v => Math.round(v / step) * step;
+    dragOff = { x: snapC(w.x) - comp.x, y: snapC(w.y) - comp.y };
+  } else {
+    if (!shiftKey) {
+      state.selComp = null;
+      state.selWire = null;
+      state.selComps = [];
+      state.selWires = [];
+    }
+    isPanning = true;
+    panOrigin = { x: sx - state.panX, y: sy - state.panY };
+  }
+  drawAll();
+}
+
+function finalizePointerUp() {
+  if (selBox) {
+    const wasMoved = selBox.moved;
+    const clickX = selBox.x1;
+    const clickY = selBox.y1;
+    selBox = null;
+
+    if (!wasMoved) {
+      const c = findCompAt(clickX, clickY);
+      if (c) {
+        pushHistory(`Rotation ${c.label || c.type}`);
+        c.rot = ((c.rot || 0) + 90) % 360;
+        state.selComp = c;
+        state.selComps = [c];
+        saveToLocalStorage();
+      }
+    } else {
+      const nC = state.selComps.length;
+      const nW = state.selWires.length;
+      if (state.tool === 'delete' && (nC + nW > 0)) {
+        deleteSelected();
+        return;
+      }
+      if (nC + nW > 1) {
+        document.getElementById('status-text').textContent = `Sélection : ${nC} symbole(s), ${nW} fil(s)`;
+      } else {
+        document.getElementById('status-text').textContent = 'Mode : Sélection';
+      }
+    }
+    drawAll();
+  }
+  if (dragMulti && dragSnapshot) {
+    if (dragMulti.moved) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
+  if (dragWireNum && dragSnapshot) {
+    if (dragWireNum.wire.numDx !== dragWireNum.startDx || dragWireNum.wire.numDy !== dragWireNum.startDy) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
+  if (dragWire && dragSnapshot) {
+    if (dragWire.wire.midY !== dragWire.origMidY || dragWire.wire.midX !== dragWire.origMidX) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
+  if (dragTermLabel && dragSnapshot) {
+    const cur = dragTermLabel.comp.termOffsets?.[dragTermLabel.idx];
+    if (cur && (cur.dx !== dragTermLabel.startDx || cur.dy !== dragTermLabel.startDy)) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
+  if (dragLabelComp && dragSnapshot) {
+    if (dragLabelComp.lblDx !== dragLabelStart.dx || dragLabelComp.lblDy !== dragLabelStart.dy) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
+  if (dragComp && dragSnapshot) {
+    if (dragComp.x !== dragStartPos.x || dragComp.y !== dragStartPos.y) {
+      undoStack.push(dragSnapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      redoStack = [];
+      updateHistoryButtons(dragSnapshot.actionLabel);
+      saveToLocalStorage();
+    }
+  }
+  isPanning = false;
+  dragComp = null;
+  dragMulti = null;
+  dragLabelComp = null;
+  dragTermLabel = null;
+  dragWire = null;
+  dragWireNum = null;
+  dragSnapshot = null;
+}
+
+function onPointerMove(sx, sy) {
+  if (isPanning) {
+    state.panX = sx - panOrigin.x;
+    state.panY = sy - panOrigin.y;
+    drawAll();
+    return;
+  }
+  const w = toWorld(sx, sy);
+  state.mouseW = w;
+
+  if (selBox) {
+    selBox.x2 = w.x;
+    selBox.y2 = w.y;
+    const minX = Math.min(selBox.x1, selBox.x2);
+    const maxX = Math.max(selBox.x1, selBox.x2);
+    const minY = Math.min(selBox.y1, selBox.y2);
+    const maxY = Math.max(selBox.y1, selBox.y2);
+
+    if (Math.hypot(maxX - minX, maxY - minY) >= 4) {
+      selBox.moved = true;
+      const boxComps = state.comps.filter(c => {
+        if (c.x >= minX && c.x <= maxX && c.y >= minY && c.y <= maxY) return true;
+        const terms = getTerms(c);
+        return terms.length > 0 && terms.some(t => t.x >= minX && t.x <= maxX && t.y >= minY && t.y <= maxY);
+      });
+      const boxWires = state.wires.filter(wr => {
+        const pts = wirePoints(wr);
+        if (pts.length < 2) return false;
+        for (let i = 0; i < pts.length - 1; i++) {
+          if (segmentHitsRect(pts[i][0], pts[i][1], pts[i + 1][0], pts[i + 1][1], minX, minY, maxX, maxY)) {
+            return true;
+          }
+        }
+        return false;
+      });
+
+      if (selBox.additive) {
+        const compSet = new Set([...selBox.baseComps, ...boxComps]);
+        const wireSet = new Set([...selBox.baseWires, ...boxWires]);
+        state.selComps = Array.from(compSet);
+        state.selWires = Array.from(wireSet);
+      } else {
+        state.selComps = boxComps;
+        state.selWires = boxWires;
+      }
+      state.selComp = state.selComps[0] || null;
+      state.selWire = state.selWires[0] || null;
+    }
+    canvas.style.cursor = 'crosshair';
+    drawAll();
+    return;
+  }
+
+  if (dragMulti) {
+    const dx = snap(w.x) - dragMulti.startX;
+    const dy = snap(w.y) - dragMulti.startY;
+    if (dx !== 0 || dy !== 0) dragMulti.moved = true;
+    dragMulti.compStarts.forEach(item => {
+      item.comp.x = item.x + dx;
+      item.comp.y = item.y + dy;
+    });
+    dragMulti.wireStarts.forEach(item => {
+      if (typeof item.midX === 'number') item.wire.midX = item.midX + dx;
+      if (typeof item.midY === 'number') item.wire.midY = item.midY + dy;
+    });
+    canvas.style.cursor = 'move';
+    drawAll();
+    return;
+  }
+
+  const hoverBorne = (state.tool === 'select' || state.tool === 'delete')
+    ? state.comps.find(c => (c.type === 'BORNE' || c.type === 'PT_CONN') && Math.hypot(c.x - w.x, c.y - w.y) <= 12)
+    : null;
+  state.hoverComp = hoverBorne || findCompAt(w.x, w.y) || null;
+
+  const termRadius = state.tool === 'wire' ? 13 : 6;
+  const rawTerm = findTermAt(w.x, w.y, termRadius);
+  state.hoverTerm = (rawTerm && !(state.tool === 'select' && (rawTerm.comp.type === 'BORNE' || rawTerm.comp.type === 'PT_CONN')))
+    ? rawTerm
+    : null;
+
+  state.hoverTermLabel = (!state.hoverTerm && !hoverBorne && state.tool === 'select') ? findTermLabelAt(w.x, w.y) : null;
+  state.hoverLabel = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && state.tool === 'select') ? findLabelAt(w.x, w.y) : null;
+  state.hoverWireNum = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && !state.hoverLabel && state.tool === 'select') ? findWireNumAt(w.x, w.y) : null;
+  state.hoverWireSeg = (!state.hoverTerm && !hoverBorne && !state.hoverTermLabel && !state.hoverLabel && !state.hoverWireNum && state.tool !== 'wire' && !dragComp && !dragLabelComp && !dragTermLabel && !dragWireNum)
+    ? findWireSegmentAt(w.x, w.y, 8)
+    : null;
+
+  if (dragWireNum) {
+    const targetX = Math.round(w.x - dragWireNum.offX);
+    const targetY = Math.round(w.y - dragWireNum.offY);
+    dragWireNum.wire.numDx = targetX - dragWireNum.baseX;
+    dragWireNum.wire.numDy = targetY - dragWireNum.baseY;
+    canvas.style.cursor = 'move';
+    drawAll();
+    return;
+  }
+
+  if (dragTermLabel) {
+    const targetX = Math.round(w.x - dragTermLabel.offX);
+    const targetY = Math.round(w.y - dragTermLabel.offY);
+    if (!dragTermLabel.comp.termOffsets) dragTermLabel.comp.termOffsets = {};
+    dragTermLabel.comp.termOffsets[dragTermLabel.idx] = {
+      dx: targetX - dragTermLabel.termX,
+      dy: targetY - dragTermLabel.termY
+    };
+    canvas.style.cursor = 'move';
+    drawAll();
+    return;
+  }
+
+  if (dragWire) {
+    const wr = dragWire.wire;
+    const a = state.comps.find(c => c.id === wr.c1), b = state.comps.find(c => c.id === wr.c2);
+    const t1 = a ? getTerms(a)[wr.t1] : null, t2 = b ? getTerms(b)[wr.t2] : null;
+    if (t1 && t2) {
+      const snap10 = v => Math.round(v / 10) * 10;
+      const dx = Math.abs(w.x - dragWire.startX);
+      const dy = Math.abs(w.y - dragWire.startY);
+
+      if (t1.y === t2.y) {
+        const ny = snap10(w.y);
+        wr.midX = null;
+        wr.midY = (Math.abs(ny - t1.y) < 6) ? null : ny;
+        canvas.style.cursor = 'ns-resize';
+      } else if (t1.x === t2.x) {
+        const nx = snap10(w.x);
+        wr.midY = null;
+        wr.midX = (Math.abs(nx - t1.x) < 6) ? null : nx;
+        canvas.style.cursor = 'ew-resize';
+      } else {
+        const moveHorizSeg = (dragWire.orient === 'H') ? (dy >= dx * 0.4) : (dy > dx * 1.6);
+        if (moveHorizSeg) {
+          wr.midX = null;
+          wr.midY = snap10(w.y);
+          canvas.style.cursor = 'ns-resize';
+        } else {
+          wr.midY = null;
+          wr.midX = snap10(w.x);
+          canvas.style.cursor = 'ew-resize';
+        }
+      }
+    }
+    drawAll();
+    return;
+  }
+
+  if (state.tool === 'delete') {
+    canvas.style.cursor = (state.hoverComp || state.hoverWireSeg) ? 'pointer' : 'not-allowed';
+  } else if (dragComp || hoverBorne || dragLabelComp || dragTermLabel || dragWireNum || state.hoverLabel || state.hoverTermLabel || state.hoverWireNum) {
+    canvas.style.cursor = 'move';
+  } else if (state.hoverWireSeg) {
+    canvas.style.cursor = state.hoverWireSeg.orient === 'H' ? 'ns-resize' : 'ew-resize';
+  } else {
+    canvas.style.cursor = 'crosshair';
+  }
+
+  document.getElementById('coords-text').textContent = `X:${snap(w.x)} Y:${snap(w.y)}`;
+
+  if (dragLabelComp) {
+    const targetX = Math.round((w.x - dragLabelOff.x) / 2) * 2;
+    const targetY = Math.round((w.y - dragLabelOff.y) / 2) * 2;
+    dragLabelComp.lblDx = targetX - dragLabelComp.x;
+    dragLabelComp.lblDy = targetY - dragLabelComp.y;
+    drawAll();
+    return;
+  }
+
+  if (dragComp) {
+    const step = (dragComp.type === 'BORNE' || dragComp.type === 'PT_CONN' || dragComp.type === 'TEXTE') ? 10 : GRID;
+    const snapC = v => Math.round(v / step) * step;
+    dragComp.x = snapC(w.x) - dragOff.x;
+    dragComp.y = snapC(w.y) - dragOff.y;
+  }
+  drawAll();
+}
+
+canvas.addEventListener('mousedown', e => { const r = canvas.getBoundingClientRect(); onPointerDown(e.clientX - r.left, e.clientY - r.top, e.button, e.shiftKey || e.ctrlKey); });
+canvas.addEventListener('mousemove', e => { const r = canvas.getBoundingClientRect(); onPointerMove(e.clientX - r.left, e.clientY - r.top); });
+window.addEventListener('mouseup', finalizePointerUp);
+
+canvas.addEventListener('touchstart', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  onPointerDown(t.clientX - r.left, t.clientY - r.top, 0);
+}, { passive: false });
+canvas.addEventListener('touchmove', e => {
+  e.preventDefault();
+  const t = e.touches[0], r = canvas.getBoundingClientRect();
+  onPointerMove(t.clientX - r.left, t.clientY - r.top);
+}, { passive: false });
+canvas.addEventListener('touchend', finalizePointerUp);
+
+canvas.addEventListener('contextmenu', e => {
+  e.preventDefault();
+});
+
+canvas.addEventListener('dblclick', e => {
+  const r = canvas.getBoundingClientRect(), w = toWorld(e.clientX - r.left, e.clientY - r.top);
+  const wNum = findWireNumAt(w.x, w.y);
+  if (wNum) {
+    state.selWire = wNum;
+    openWireNumModal(wNum);
+    return;
+  }
+  const c = findLabelAt(w.x, w.y) || findCompAt(w.x, w.y);
+  if (c) {
+    state.selComp = c;
+    if (c.type === 'TEXTE') {
+      openTextModal(c);
+    } else {
+      openEditModal();
+    }
+  } else {
+    const wireHit = findWireSegmentAt(w.x, w.y, 8);
+    if (wireHit) {
+      state.selWire = wireHit.wire;
+      openWireNumModal(wireHit.wire);
+    } else if (w.y >= 740 && w.y <= 810) {
+      openCartoucheModal();
+    }
+  }
+});
+
+window.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
+    if (e.key === 'Enter' && !document.getElementById('save-modal').classList.contains('hidden')) {
+      e.preventDefault();
+      confirmSaveProject();
+    }
+    return;
+  }
+
+  if (e.ctrlKey || e.metaKey) {
+    const k = e.key.toLowerCase();
+    if (k === 's') { e.preventDefault(); openSaveModal(); return; }
+    if (k === 'o') { e.preventDefault(); triggerOpenFile(); return; }
+    if (k === 'p') { e.preventDefault(); printSchema(); return; }
+    if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); return; }
+    if (k === 'y' || (k === 'z' && e.shiftKey)) { e.preventDefault(); redo(); return; }
+    if (k === 'd') { e.preventDefault(); duplicateSelected(); return; }
+  }
+
+  if (e.key === 'Escape') { state.wireStart = null; setTool('select'); }
+  if (e.key === 't' || e.key === 'T') { setTool('text'); }
+  if (e.key === 'r' || e.key === 'R') rotateSelected();
+  if (e.key === 'Delete' || e.key === 'Backspace') {
+    e.preventDefault();
+    deleteSelected();
+  }
+});
+
+function setTool(t) {
+  state.tool = t;
+  if (t !== 'place') state.placeType = null;
+  if (t !== 'wire') state.wireStart = null;
+  document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+  const btn = document.getElementById(`btn-${t}`);
+  if (btn) btn.classList.add('active');
+  const lbls = {
+    select: 'Mode : Sélection',
+    wire: 'Mode : Tracé de fil',
+    text: 'Mode : Texte (cliquez sur le schéma pour écrire)',
+    delete: 'Mode : Suppression (cliquez sur un symbole, un texte ou un fil)',
+    place: 'Mode : Placement'
+  };
+  document.getElementById('status-text').textContent = lbls[t] || '';
+  renderLibrary();
+  drawAll();
+}
+
+function handleDeleteToolClick() {
+  const hasComps = state.selComps.length > 0 || Boolean(state.selComp);
+  const hasWires = state.selWires.length > 0 || Boolean(state.selWire);
+  if (hasComps || hasWires) {
+    deleteSelected();
+    return;
+  }
+  setTool(state.tool === 'delete' ? 'select' : 'delete');
+}
+
+function setWireType(wt) {
+  state.wireType = wt;
+}
+
+function setCat(cat) {
+  state.cat = cat;
+  document.querySelectorAll('.cat-btn').forEach(b => {
+    b.className = b.id === `cat-${cat}`
+      ? 'cat-btn px-2 py-0.5 rounded bg-blue-600 text-white font-semibold shrink-0'
+      : 'cat-btn px-2 py-0.5 rounded bg-slate-800 text-slate-300 shrink-0';
+  });
+  renderLibrary();
+}
+
+function toggleSidebar() { document.getElementById('sidebar').classList.toggle('open'); }
+
+function rotateSelected() {
+  const targets = state.selComps.length > 0 ? state.selComps : (state.selComp ? [state.selComp] : []);
+  if (targets.length > 0) {
+    pushHistory(`Rotation (${targets.length})`);
+    targets.forEach(c => {
+      c.rot = ((c.rot || 0) + 90) % 360;
+    });
+    drawAll();
+    saveToLocalStorage();
+  }
+}
+
+function duplicateSelected() {
+  const targets = state.selComps.length > 0 ? state.selComps : (state.selComp ? [state.selComp] : []);
+  if (targets.length === 0) return;
+  pushHistory(`Duplication (${targets.length})`);
+  const idMap = new Map();
+  const newComps = [];
+  targets.forEach(src => {
+    const copy = addComp(src.type, src.x + 40, src.y + 40, src.type === 'TEXTE' ? src.label : undefined, src.sub, src.rot || 0, src.customTerms || null);
+    copy.lblDx = src.lblDx;
+    copy.lblDy = src.lblDy;
+    copy.termOffsets = src.termOffsets ? JSON.parse(JSON.stringify(src.termOffsets)) : null;
+    copy.textSize = src.textSize || 13;
+    copy.textColor = src.textColor || '#0f172a';
+    copy.textBox = Boolean(src.textBox);
+    idMap.set(src.id, copy);
+    newComps.push(copy);
+  });
+  const newWires = [];
+  state.wires.forEach(w => {
+    if (idMap.has(w.c1) && idMap.has(w.c2)) {
+      const nw = addWire(
+        idMap.get(w.c1),
+        w.t1,
+        idMap.get(w.c2),
+        w.t2,
+        w.style,
+        typeof w.midY === 'number' ? w.midY + 40 : w.midY,
+        typeof w.midX === 'number' ? w.midX + 40 : w.midX
+      );
+      newWires.push(nw);
+    }
+  });
+  state.selComps = newComps;
+  state.selComp = newComps[0] || null;
+  state.selWires = newWires;
+  state.selWire = newWires[0] || null;
+  drawAll();
+  saveToLocalStorage();
+}
+
+function deleteSelected() {
+  const hasComps = state.selComps.length > 0 || state.selComp;
+  const hasWires = state.selWires.length > 0 || state.selWire;
+  if (!hasComps && !hasWires) return;
+
+  const compIds = new Set(state.selComps.map(c => c.id));
+  if (state.selComp) compIds.add(state.selComp.id);
+  const wireIds = new Set(state.selWires.map(w => w.id));
+  if (state.selWire) wireIds.add(state.selWire.id);
+
+  const count = compIds.size + wireIds.size;
+  pushHistory(`Suppression (${count} élément(s))`);
+  state.comps = state.comps.filter(k => !compIds.has(k.id));
+  state.wires = state.wires.filter(k => !wireIds.has(k.id) && !compIds.has(k.c1) && !compIds.has(k.c2));
+  state.selComp = null;
+  state.selWire = null;
+  state.selComps = [];
+  state.selWires = [];
+  if (state.showWireNumbers) computeEquipotentialWireNumbers();
+  document.getElementById('status-text').textContent = 'Mode : Sélection';
+  showToast(`🗑️ ${count} élément(s) supprimé(s)`);
+  drawAll();
+  saveToLocalStorage();
+}
+
+function zoomStep(f) { state.zoom = Math.min(2.6, Math.max(0.35, state.zoom * f)); drawAll(); }
+
+function fitSheet() {
+  const pad = 24;
+  const sc = Math.min(1.3, Math.max(0.35, Math.min((viewW - pad) / 1200, (viewH - pad) / 820)));
+  state.zoom = sc;
+  state.panX = Math.round((viewW - 1200 * sc) / 2);
+  state.panY = Math.round((viewH - 820 * sc) / 2);
+  drawAll();
+}
+
+function openEditModal() {
+  if (!state.selComp) return;
+  if (state.selComp.type === 'TEXTE') {
+    openTextModal(state.selComp);
+    return;
+  }
+  const def = SYMBOLS[state.selComp.type];
+  document.getElementById('inp-label').value = state.selComp.label || '';
+  document.getElementById('inp-sub').value = state.selComp.sub || '';
+  const defaultTerms = def ? def.terms.map(t => t.n).join(',') : '';
+  document.getElementById('inp-terms').value = state.selComp.customTerms || defaultTerms;
+  const m = document.getElementById('edit-modal');
+  m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeEditModal() {
+  const m = document.getElementById('edit-modal');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+function saveEditModal() {
+  if (state.selComp) {
+    pushHistory(`Renommage ${state.selComp.label || state.selComp.type}`);
+    state.selComp.label = document.getElementById('inp-label').value.trim();
+    state.selComp.sub = document.getElementById('inp-sub').value.trim();
+    const tVal = document.getElementById('inp-terms').value.trim();
+    state.selComp.customTerms = tVal ? tVal : null;
+    drawAll();
+    saveToLocalStorage();
+  }
+  closeEditModal();
+}
+function resetLabelPosModal() {
+  if (state.selComp) {
+    pushHistory(`Réinit. position repère ${state.selComp.label || state.selComp.type}`);
+    state.selComp.lblDx = null;
+    state.selComp.lblDy = null;
+    state.selComp.termOffsets = null;
+    drawAll();
+    saveToLocalStorage();
+  }
+  closeEditModal();
+}
+
+function openCartoucheModal() {
+  document.getElementById('cart-title').value = state.cartouche.title || '';
+  document.getElementById('cart-school').value = state.cartouche.school || '';
+  document.getElementById('cart-author').value = state.cartouche.author || '';
+  document.getElementById('cart-date').value = state.cartouche.date || '';
+  document.getElementById('cart-folio').value = state.cartouche.folio || '';
+  const m = document.getElementById('cartouche-modal');
+  m.classList.remove('hidden'); m.classList.add('flex');
+}
+function closeCartoucheModal() {
+  const m = document.getElementById('cartouche-modal');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+function saveCartoucheModal() {
+  pushHistory('Modification cartouche');
+  state.cartouche.title  = document.getElementById('cart-title').value.trim();
+  state.cartouche.school = document.getElementById('cart-school').value.trim();
+  state.cartouche.author = document.getElementById('cart-author').value.trim();
+  state.cartouche.date   = document.getElementById('cart-date').value.trim();
+  state.cartouche.folio  = document.getElementById('cart-folio').value.trim();
+  drawAll();
+  saveToLocalStorage();
+  closeCartoucheModal();
+}
+
+let pendingTextTarget = null;
+let pendingTextCoords = { x: 400, y: 200 };
+
+function openTextModal(existingComp = null, x = 400, y = 200) {
+  pendingTextTarget = existingComp;
+  pendingTextCoords = { x, y };
+  const inp = document.getElementById('inp-free-text');
+  const sz = document.getElementById('inp-text-size');
+  const col = document.getElementById('inp-text-color');
+  const box = document.getElementById('chk-text-box');
+
+  if (existingComp) {
+    inp.value = existingComp.label || '';
+    sz.value = String(existingComp.textSize || 13);
+    col.value = existingComp.textColor || '#0f172a';
+    box.checked = Boolean(existingComp.textBox);
+  } else {
+    inp.value = '';
+    sz.value = '13';
+    col.value = '#0f172a';
+    box.checked = false;
+  }
+
+  const m = document.getElementById('text-modal');
+  m.classList.remove('hidden');
+  m.classList.add('flex');
+  setTimeout(() => { inp.focus(); inp.select(); }, 40);
+}
+
+function closeTextModal() {
+  const m = document.getElementById('text-modal');
+  m.classList.add('hidden');
+  m.classList.remove('flex');
+  pendingTextTarget = null;
+}
+
+function saveTextModal() {
+  const val = document.getElementById('inp-free-text').value.replace(/\r/g, '').trim();
+  const textSize = Number(document.getElementById('inp-text-size').value) || 13;
+  const textColor = document.getElementById('inp-text-color').value || '#0f172a';
+  const textBox = document.getElementById('chk-text-box').checked;
+
+  if (!val) {
+    closeTextModal();
+    return;
+  }
+
+  if (pendingTextTarget) {
+    pushHistory('Modification de texte');
+    pendingTextTarget.label = val;
+    pendingTextTarget.textSize = textSize;
+    pendingTextTarget.textColor = textColor;
+    pendingTextTarget.textBox = textBox;
+    state.selComp = pendingTextTarget;
+    showToast('🔤 Texte mis à jour');
+  } else {
+    pushHistory('Ajout de texte sur le schéma');
+    const c = addComp('TEXTE', pendingTextCoords.x, pendingTextCoords.y, val, '');
+    c.textSize = textSize;
+    c.textColor = textColor;
+    c.textBox = textBox;
+    state.selComp = c;
+    state.selWire = null;
+    setTool('select');
+    showToast('🔤 Texte ajouté sur le schéma');
+  }
+
+  closeTextModal();
+  drawAll();
+  saveToLocalStorage();
+}
+
+function openWireNumModal(wire) {
+  const target = wire || state.selWire;
+  if (!target) return;
+  state.selWire = target;
+  document.getElementById('inp-wire-num').value = target.num !== null && target.num !== undefined ? String(target.num) : '';
+  const m = document.getElementById('wire-num-modal');
+  m.classList.remove('hidden'); m.classList.add('flex');
+  setTimeout(() => {
+    const inp = document.getElementById('inp-wire-num');
+    inp.focus(); inp.select();
+  }, 40);
+}
+
+function closeWireNumModal() {
+  const m = document.getElementById('wire-num-modal');
+  m.classList.add('hidden'); m.classList.remove('flex');
+}
+
+function saveWireNumModal() {
+  if (state.selWire) {
+    const val = document.getElementById('inp-wire-num').value.trim();
+    const applyEquip = document.getElementById('chk-wire-equip').checked;
+    pushHistory(`Numéro du fil : ${val || 'effacé'}`);
+    if (applyEquip) {
+      getEquipotentialWires(state.selWire).forEach(w => { w.num = val || null; });
+    } else {
+      state.selWire.num = val || null;
+    }
+    if (val) state.showWireNumbers = true;
+    updateWireNumButtonUI();
+    drawAll();
+    saveToLocalStorage();
+  }
+  closeWireNumModal();
+}
+
+function resetWireNumPosModal() {
+  if (state.selWire) {
+    pushHistory('Réinit. position n° de fil');
+    state.selWire.numDx = null;
+    state.selWire.numDy = null;
+    drawAll();
+    saveToLocalStorage();
+  }
+  closeWireNumModal();
+}
+
+function renderSheetDataURL(scale = 2.5, format = 'image/png') {
+  const SW = 1200, SH = 820;
+  const prevZoom = state.zoom, prevPanX = state.panX, prevPanY = state.panY;
+  const prevSelComp = state.selComp, prevSelWire = state.selWire;
+  const prevSelComps = state.selComps, prevSelWires = state.selWires;
+  const prevHoverTerm = state.hoverTerm, prevHoverComp = state.hoverComp, prevHoverLabel = state.hoverLabel, prevHoverTermLabel = state.hoverTermLabel, prevHoverWire = state.hoverWireSeg, prevHoverWireNum = state.hoverWireNum;
+  const prevTool = state.tool;
+
+  state.selComp = null;
+  state.selWire = null;
+  state.selComps = [];
+  state.selWires = [];
+  state.hoverTerm = null;
+  state.hoverComp = null;
+  state.hoverLabel = null;
+  state.hoverTermLabel = null;
+  state.hoverWireSeg = null;
+  state.hoverWireNum = null;
+  if (state.tool === 'place') state.tool = 'select';
+
+  canvas.width = Math.floor(SW * scale);
+  canvas.height = Math.floor(SH * scale);
+
+  ctx.save();
+  ctx.setTransform(scale, 0, 0, scale, 0, 0);
+  state.zoom = 1;
+  state.panX = 0;
+  state.panY = 0;
+
+  ctx.fillStyle = '#ffffff';
+  ctx.fillRect(0, 0, SW, SH);
+
+  viewW = SW;
+  viewH = SH;
+  drawAll(scale);
+  ctx.restore();
+
+  const dataUrl = canvas.toDataURL(format, format === 'image/jpeg' ? 0.95 : undefined);
+
+  state.zoom = prevZoom;
+  state.panX = prevPanX;
+  state.panY = prevPanY;
+  state.selComp = prevSelComp;
+  state.selWire = prevSelWire;
+  state.selComps = prevSelComps;
+  state.selWires = prevSelWires;
+  state.hoverTerm = prevHoverTerm;
+  state.hoverComp = prevHoverComp;
+  state.hoverLabel = prevHoverLabel;
+  state.hoverTermLabel = prevHoverTermLabel;
+  state.hoverWireSeg = prevHoverWire;
+  state.hoverWireNum = prevHoverWireNum;
+  state.tool = prevTool;
+  updateCanvasSize();
+
+  return dataUrl;
+}
+
+function printSchema() {
+  const dataUrl = renderSheetDataURL(3);
+  let pContainer = document.getElementById('print-container');
+  if (pContainer) pContainer.remove();
+
+  pContainer = document.createElement('div');
+  pContainer.id = 'print-container';
+  
+  const img = document.createElement('img');
+  img.src = dataUrl;
+  img.alt = 'Impression CBUSSAC Schéma';
+  pContainer.appendChild(img);
+  document.body.appendChild(pContainer);
+
+  showToast('🖨️ Ouverture de la boîte d\'impression...');
+  
+  setTimeout(() => {
+    window.print();
+    setTimeout(() => {
+      if (pContainer && pContainer.parentNode) {
+        pContainer.parentNode.removeChild(pContainer);
+      }
+    }, 1000);
+  }, 120);
+}
+
+function exportJPG() {
+  const dataUrl = renderSheetDataURL(2.5, 'image/jpeg');
+  const a = document.createElement('a');
+  a.download = `${state.currentFileName || 'cbussac_schema'}.jpg`;
+  a.href = dataUrl;
+  a.click();
+  showToast('📷 Image JPG haute résolution exportée');
+}
+
+function exportSVG() {
+  const dataUrl = renderSheetDataURL(2.5);
+  const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="820" viewBox="0 0 1200 820">
+  <title>CBUSSAC Schéma - ${state.cartouche.title}</title>
+  <image width="1200" height="820" href="${dataUrl}"/>
+</svg>`;
+  const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
+  const a = document.createElement('a');
+  a.download = `${state.currentFileName || 'cbussac_schema'}.svg`;
+  a.href = URL.createObjectURL(blob);
+  a.click();
+  showToast('📐 Fichier SVG exporté');
+}
+
+/* ============================================================================
+   7. MODÈLE TYPE : DÉMARRAGE DIRECT 2 SENS CONFORME AU PDF
+   ============================================================================ */
+function loadPreset(name, recordHistory = false) {
+  if (recordHistory && (state.comps.length > 0 || state.wires.length > 0)) {
+    pushHistory(`Chargement modèle ${name}`);
+  }
+  state.comps = []; state.wires = []; state.selComp = null; state.selWire = null; state.selComps = []; state.selWires = []; state.wireStart = null;
+  state.presetName = name;
+  if (name === 'vide') {
+    state.cartouche.title = 'NOUVEAU SCHEMA ELECTRIQUE';
+    state.currentFileName = 'nouveau_schema';
+    updateFileBadge();
+    drawAll();
+    saveToLocalStorage();
+    return;
+  }
+
+  const pt = (x, y) => addComp('PT_CONN', x, y, '');
+  const borne = (x, y, lbl) => addComp('BORNE', x, y, lbl);
+
+  if (name === 'pdf_2sens' || name === 'pdf_1sens') {
+    const is2Sens = (name === 'pdf_2sens');
+    state.cartouche.title = is2Sens ? 'DEMARRAGE DIRECT 2 SENS DE ROTATION' : 'DEMARRAGE DIRECT 1 SENS DE ROTATION';
+    state.currentFileName = is2Sens ? 'demarrage_direct_2_sens' : 'demarrage_direct_1_sens';
+
+    const alim3p = addComp('ALIM_3P', 220, 80, '3×400V + PE', '');
+    const topPE  = pt(440, 72);
+
+    const y1 = borne(180, 112, 'Y1');
+    const y2 = borne(220, 112, 'Y2');
+    const y3 = borne(260, 112, 'Y3');
+    addWire(alim3p, 0, y1, 0, 'PHASE');
+    addWire(alim3p, 1, y2, 0, 'PHASE');
+    addWire(alim3p, 2, y3, 0, 'PHASE');
+
+    const q1 = addComp('Q_SECT_3P', 220, 196, 'Q1', '');
+    addWire(y1, 1, q1, 0, 'PHASE');
+    addWire(y2, 1, q1, 1, 'PHASE');
+    addWire(y3, 1, q1, 2, 'PHASE');
+
+    const km1 = addComp('KM_CONT_3P', 220, 380, 'KM1', '');
+    addWire(q1, 3, km1, 0, 'PHASE');
+    addWire(q1, 4, km1, 1, 'PHASE');
+    addWire(q1, 5, km1, 2, 'PHASE');
+
+    const f1 = addComp('F_THERM_3P', 220, 544, 'F1', '');
+    addWire(km1, 3, f1, 0, 'PHASE');
+    addWire(km1, 4, f1, 1, 'PHASE');
+    addWire(km1, 5, f1, 2, 'PHASE');
+
+    if (is2Sens) {
+      addComp('VERR_MECA', 300, 380, '', '');
+      const km2 = addComp('KM_CONT_3P', 380, 380, 'KM2', '');
+
+      addWire(km1, 0, km2, 0, 'PHASE', 266);
+      addWire(km1, 1, km2, 1, 'PHASE', 286);
+      addWire(km1, 2, km2, 2, 'PHASE', 306);
+
+      addWire(km2, 3, f1, 2, 'PHASE', 442);
+      addWire(km2, 4, f1, 1, 'PHASE', 462);
+      addWire(km2, 5, f1, 0, 'PHASE', 482);
+    }
+
+    const y4  = borne(180, 620, 'Y4');
+    const y5  = borne(220, 620, 'Y5');
+    const y6  = borne(260, 620, 'Y6');
+    const xpe = borne(300, 640, 'Xpe');
+    const m1  = addComp('M_MOT_3P', 220, 700, 'M1', '');
+
+    addWire(f1, 3, y4, 0, 'PHASE');
+    addWire(f1, 4, y5, 0, 'PHASE');
+    addWire(f1, 5, y6, 0, 'PHASE');
+    addWire(y4, 1, m1, 0, 'PHASE');
+    addWire(y5, 1, m1, 1, 'PHASE');
+    addWire(y6, 1, m1, 2, 'PHASE');
+    addWire(topPE, 0, xpe, 0, 'PE', 616);
+    addWire(xpe, 1, m1, 3, 'PE', 'VH');
+
+    const top24L = pt(680, 54), top24R = pt(1100, 54);
+    const bot24L = pt(680, 732), bot24R = pt(1100, 732);
+    addWire(top24L, 0, top24R, 0, 'CMD');
+
+    const x1     = borne(680, 86, 'X1');
+    const f1nc   = addComp('F_NC_95_96', 680, 140, 'F1', '');
+    const q1p    = addComp('Q_PRE_NO',   680, 212, '-Q1', '');
+    const x2     = borne(680, 268, 'X2');
+    const s1     = addComp('S_BP_NC',    680, 324, 'S1', '');
+    const x3     = borne(680, 380, 'X3');
+    const pDist1 = pt(680, 410);
+
+    addWire(top24L, 0, x1, 0, 'CMD');
+    addWire(x1, 1, f1nc, 0, 'CMD');
+    addWire(f1nc, 1, q1p, 0, 'CMD');
+    addWire(q1p, 1, x2, 0, 'CMD');
+    addWire(x2, 1, s1, 0, 'CMD');
+    addWire(s1, 1, x3, 0, 'CMD');
+    addWire(x3, 1, pDist1, 0, 'CMD');
+
+    const pDistKM1 = pt(760, 410);
+    const s2       = addComp('S_BP_NO',   680, 456, 'S2', '');
+    const x4       = borne(680, 508, 'X4');
+    const km1no    = addComp('KM_NO',     760, 456, 'KM1', '');
+    const jSens1   = pt(680, 536);
+    const x7       = borne(680, 564, 'X7');
+    const km2nc    = addComp('KM_NC',     680, 616, 'KM2', '');
+    const bob1     = addComp('KM_BOBINE', 680, 684, 'KM1', '');
+
+    addWire(pDist1, 0, s2, 0, 'CMD');
+    addWire(s2, 1, x4, 0, 'CMD');
+    addWire(x4, 1, jSens1, 0, 'CMD');
+    addWire(pDist1, 0, pDistKM1, 0, 'CMD');
+    addWire(pDistKM1, 0, km1no, 0, 'CMD');
+    addWire(km1no, 1, jSens1, 0, 'CMD', 'VH');
+    addWire(jSens1, 0, x7, 0, 'CMD');
+    addWire(x7, 1, km2nc, 0, 'CMD');
+    addWire(km2nc, 1, bob1, 0, 'CMD');
+    addWire(bob1, 1, bot24L, 0, 'CMD');
+
+    let lastTopDist = pDistKM1;
+    let lastBotRail = bot24L;
+
+    if (is2Sens) {
+      const pRailS3  = pt(860, 410);
+      const pDistKM2 = pt(940, 410);
+      addWire(pDistKM1, 0, pRailS3, 0, 'CMD');
+      addWire(pRailS3, 0, pDistKM2, 0, 'CMD');
+
+      const s3     = addComp('S_BP_NO',   860, 456, 'S3', '');
+      const x5     = borne(860, 508, 'X5');
+      const km2no  = addComp('KM_NO',     940, 456, 'KM2', '');
+      const x6     = borne(940, 508, 'X6');
+      const jSens2 = pt(860, 536);
+      const x8     = borne(860, 564, 'X8');
+      const km1nc  = addComp('KM_NC',     860, 616, 'KM1', '');
+      const bob2   = addComp('KM_BOBINE', 860, 684, 'KM2', '');
+      const pBot2  = pt(860, 732);
+
+      addWire(pRailS3, 0, s3, 0, 'CMD');
+      addWire(s3, 1, x5, 0, 'CMD');
+      addWire(x5, 1, jSens2, 0, 'CMD');
+      addWire(pDistKM2, 0, km2no, 0, 'CMD');
+      addWire(km2no, 1, x6, 0, 'CMD');
+      addWire(x6, 1, jSens2, 0, 'CMD', 'VH');
+      addWire(jSens2, 0, x8, 0, 'CMD');
+      addWire(x8, 1, km1nc, 0, 'CMD');
+      addWire(km1nc, 1, bob2, 0, 'CMD');
+      addWire(bob2, 1, pBot2, 0, 'CMD');
+      addWire(bot24L, 0, pBot2, 0, 'CMD');
+
+      lastTopDist = pDistKM2;
+      lastBotRail = pBot2;
+    }
+
+    const pTopH1 = pt(1020, 410);
+    addWire(lastTopDist, 0, pTopH1, 0, 'CMD');
+    const x9     = borne(1020, 592, 'X9');
+    const h1     = addComp('H_VOYANT', 1020, 646, 'H1', '');
+    const x10    = borne(1020, 700, 'X10');
+    const pBotH1 = pt(1020, 732);
+    addWire(pTopH1, 0, x9, 0, 'CMD');
+    addWire(x9, 1, h1, 0, 'CMD');
+    addWire(h1, 1, x10, 0, 'CMD');
+    addWire(x10, 1, pBotH1, 0, 'CMD');
+    addWire(lastBotRail, 0, pBotH1, 0, 'CMD');
+
+    const f1no   = addComp('F_NO_97_98', 1100, 520, 'F1', '');
+    const x11    = borne(1100, 592, 'X11');
+    const h2     = addComp('H_VOYANT',   1100, 646, 'H2', '');
+    const x12    = borne(1100, 700, 'X12');
+
+    addWire(top24R, 0, f1no, 0, 'CMD');
+    addWire(f1no, 1, x11, 0, 'CMD');
+    addWire(x11, 1, h2, 0, 'CMD');
+    addWire(h2, 1, x12, 0, 'CMD');
+    addWire(x12, 1, bot24R, 0, 'CMD');
+    addWire(pBotH1, 0, bot24R, 0, 'CMD');
+  }
+
+  if (state.showWireNumbers) {
+    computeEquipotentialWireNumbers();
+  }
+  updateFileBadge();
+  updateWireNumButtonUI();
+  fitSheet();
+  saveToLocalStorage();
+}
+
+function updateCanvasSize() {
+  const wrap = document.getElementById('canvas-wrap');
+  const dpr = window.devicePixelRatio || 1;
+  const cw = wrap ? wrap.clientWidth : 0;
+  const ch = wrap ? wrap.clientHeight : 0;
+  viewW = cw > 20 ? cw : (window.innerWidth || 1000);
+  viewH = ch > 20 ? ch : ((window.innerHeight - 52) || 650);
+  canvas.width = Math.floor(viewW * dpr);
+  canvas.height = Math.floor(viewH * dpr);
+  drawAll();
+}
+
+renderLibrary();
+updateCanvasSize();
+loadPreset('pdf_2sens', false);
+updateHistoryButtons();
+
+if (typeof ResizeObserver !== 'undefined') {
+  new ResizeObserver(() => { updateCanvasSize(); }).observe(document.getElementById('canvas-wrap'));
+}
+window.addEventListener('resize', updateCanvasSize);
+</script>
+</body>
+</html>
