@@ -27,14 +27,21 @@
     
     @media print {
       @page { size: A4 landscape; margin: 0; }
-      html, body { background: #ffffff !important; width: 100% !important; height: 100% !important; overflow: visible !important; }
-      header, #app-body, #new-modal, #save-modal, #edit-modal, #text-modal, #cartouche-modal, #wire-num-modal, #wheel-context-menu, #file-open-input, #toast-box, #drop-overlay { display: none !important; }
+      html, body { background: #ffffff !important; width: 100% !important; height: auto !important; overflow: visible !important; margin: 0 !important; padding: 0 !important; }
+      header, #app-body, #new-modal, #save-modal, #edit-modal, #text-modal, #cartouche-modal, #wire-num-modal, #delete-folio-modal, #wheel-context-menu, #file-open-input, #toast-box, #drop-overlay { display: none !important; }
       body * { visibility: hidden !important; }
       #print-container, #print-container * { visibility: visible !important; }
       #print-container {
-        position: fixed !important;
-        left: 0 !important;
-        top: 0 !important;
+        position: static !important;
+        display: block !important;
+        width: 100% !important;
+        height: auto !important;
+        background: #ffffff !important;
+        margin: 0 !important;
+        padding: 0 !important;
+        z-index: 999999 !important;
+      }
+      .print-page {
         width: 100vw !important;
         height: 100vh !important;
         display: flex !important;
@@ -43,9 +50,14 @@
         background: #ffffff !important;
         margin: 0 !important;
         padding: 0 !important;
-        z-index: 999999 !important;
+        page-break-after: always !important;
+        break-after: page !important;
       }
-      #print-container img {
+      .print-page:last-child {
+        page-break-after: auto !important;
+        break-after: auto !important;
+      }
+      .print-page img {
         max-width: 100% !important;
         max-height: 100% !important;
         width: auto !important;
@@ -119,7 +131,7 @@
         <option value="vide">📄 Feuille Vierge</option>
       </select>
 
-      <button onclick="printSchema()" class="px-2.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-sm" title="Imprimer le schéma en A4 Paysage (Ctrl+P)">🖨️ Imprimer</button>
+      <button onclick="printSchema()" class="px-2.5 py-1.5 rounded bg-amber-600 hover:bg-amber-500 text-white text-xs font-semibold shadow-sm" title="Imprimer tous les folios du schéma (Ctrl+P)">🖨️ Imprimer</button>
       <button onclick="exportJPG()" class="px-2.5 py-1.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold" title="Exporter en JPG">📷 JPG</button>
       <button onclick="exportSVG()" class="px-2.5 py-1.5 rounded bg-teal-600 hover:bg-teal-500 text-white text-xs font-semibold" title="Exporter en SVG">📐 SVG</button>
     </div>
@@ -182,14 +194,24 @@
         </div>
       </div>
 
-      <!-- Bandeau d'état inférieur -->
-      <div class="absolute bottom-2.5 left-2.5 bg-slate-900/90 border border-slate-700 px-2.5 py-1 rounded text-[11px] text-slate-300 pointer-events-none flex items-center gap-3">
-        <span class="font-bold text-white">⚡ CBUSSAC Schéma</span>
-        <span id="format-badge" class="px-1.5 py-0.5 rounded bg-blue-900/80 border border-blue-600 text-blue-200 font-bold">A4</span>
-        <span id="file-name-text" class="text-emerald-400 font-semibold">demarrage_direct_2_sens.cbs.json</span>
-        <span id="status-text" class="text-blue-400 font-semibold">Mode : Sélection</span>
-        <span id="history-text" class="text-amber-300 font-medium hidden md:inline">Historique : prêt</span>
-        <span id="coords-text" class="hidden sm:inline font-mono text-slate-400">X:0 Y:0</span>
+      <!-- Bandeau d'état inférieur avec gestion des Folios -->
+      <div class="absolute bottom-2.5 left-2.5 right-2.5 bg-slate-900/95 border border-slate-700 px-2.5 py-1.5 rounded-lg text-[11px] text-slate-300 pointer-events-auto flex items-center justify-between gap-3 shadow-xl overflow-x-auto">
+        <div class="flex items-center gap-3 shrink-0">
+          <span class="font-bold text-white">⚡ CBUSSAC Schéma</span>
+          <span id="format-badge" class="px-1.5 py-0.5 rounded bg-blue-900/80 border border-blue-600 text-blue-200 font-bold">A4</span>
+          <span id="file-name-text" class="text-emerald-400 font-semibold">demarrage_direct_2_sens.cbs.json</span>
+          <span id="status-text" class="text-blue-400 font-semibold">Mode : Sélection</span>
+          <span id="history-text" class="text-amber-300 font-medium hidden lg:inline">Historique : prêt</span>
+          <span id="coords-text" class="hidden sm:inline font-mono text-slate-400">X:0 Y:0</span>
+        </div>
+
+        <!-- Zone des Folios (Pages) + Icône Ajouter un Folio -->
+        <div class="flex items-center gap-1.5 shrink-0 border-l border-slate-700 pl-2.5">
+          <div id="folio-tabs-container" class="flex items-center gap-1"></div>
+          <button type="button" onclick="addNewFolio()" class="px-2 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-semibold border border-blue-400 shadow-sm flex items-center gap-1 transition" title="Ajouter un nouveau folio (nouvelle page)">
+            <span>➕</span><span>Folio</span>
+          </button>
+        </div>
       </div>
     </main>
   </div>
@@ -388,6 +410,23 @@
           <button onclick="closeWireNumModal()" class="px-3 py-1.5 rounded bg-slate-800 text-xs text-slate-300">Annuler</button>
           <button onclick="saveWireNumModal()" class="px-3 py-1.5 rounded bg-blue-600 hover:bg-blue-500 text-xs text-white font-semibold">Valider</button>
         </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modale Confirmation Suppression de Folio -->
+  <div id="delete-folio-modal" class="fixed inset-0 bg-slate-950/75 hidden items-center justify-center z-50 p-4">
+    <div class="bg-slate-900 border border-rose-500/60 rounded-xl w-full max-w-sm p-4 shadow-2xl space-y-3">
+      <div class="flex justify-between items-center border-b border-slate-800 pb-2">
+        <h3 class="font-bold text-sm text-white flex items-center gap-1.5"><span>⚠️</span><span>Confirmation de suppression</span></h3>
+        <button onclick="closeDeleteFolioModal()" class="text-slate-400 hover:text-white text-lg leading-none">&times;</button>
+      </div>
+      <p id="delete-folio-msg" class="text-xs text-slate-200 leading-relaxed">
+        Voulez-vous vraiment supprimer ce folio ?
+      </p>
+      <div class="flex justify-end gap-2 pt-2 border-t border-slate-800">
+        <button onclick="closeDeleteFolioModal()" class="px-3 py-1.5 rounded bg-slate-800 hover:bg-slate-700 text-xs text-slate-300">Annuler</button>
+        <button onclick="confirmDeleteFolio()" class="px-3.5 py-1.5 rounded bg-rose-600 hover:bg-rose-500 text-xs text-white font-semibold shadow-sm">🗑️ Supprimer le folio</button>
       </div>
     </div>
   </div>
@@ -1112,6 +1151,8 @@ let state = {
   mouseW: { x: 0, y: 0 },
   presetName: 'pdf_2sens',
   currentFileName: 'demarrage_direct_2_sens',
+  folios: [],
+  activeFolioIndex: 0,
   cartouche: {
     school: 'LP XXXX',
     title: 'DEMARRAGE DIRECT 2 SENS DE ROTATION',
@@ -1120,6 +1161,259 @@ let state = {
     folio: '01 / 01'
   }
 };
+
+function sanitizeCompItem(c) {
+  return {
+    id: c.id || ('c' + Math.random().toString(36).slice(2, 8)),
+    type: c.type,
+    x: Math.round(Number(c.x) || 200),
+    y: Math.round(Number(c.y) || 200),
+    rot: Number(c.rot) || 0,
+    label: c.label !== undefined ? String(c.label) : '',
+    sub: c.sub !== undefined ? String(c.sub) : '',
+    customTerms: c.customTerms || null,
+    lblDx: typeof c.lblDx === 'number' ? c.lblDx : null,
+    lblDy: typeof c.lblDy === 'number' ? c.lblDy : null,
+    termOffsets: c.termOffsets ? JSON.parse(JSON.stringify(c.termOffsets)) : null,
+    textSize: Number(c.textSize) || 13,
+    textColor: c.textColor || '#0f172a',
+    textBox: Boolean(c.textBox)
+  };
+}
+
+function sanitizeWireItem(w) {
+  return {
+    id: w.id || ('w' + Math.random().toString(36).slice(2, 8)),
+    c1: w.c1,
+    t1: Number(w.t1) || 0,
+    c2: w.c2,
+    t2: Number(w.t2) || 0,
+    style: WIRE_STYLES[w.style] ? w.style : 'CMD',
+    midY: w.midY !== undefined ? w.midY : null,
+    midX: w.midX !== undefined ? w.midX : null,
+    num: w.num !== undefined ? w.num : null,
+    numDx: typeof w.numDx === 'number' ? w.numDx : null,
+    numDy: typeof w.numDy === 'number' ? w.numDy : null
+  };
+}
+
+function updateAllFoliosNumbering() {
+  const total = Math.max(1, state.folios.length);
+  const totalStr = String(total).padStart(2, '0');
+  state.folios.forEach((f, i) => {
+    const numStr = `${String(i + 1).padStart(2, '0')} / ${totalStr}`;
+    if (!f.cartouche) f.cartouche = {};
+    f.cartouche.folio = numStr;
+    if (i === state.activeFolioIndex) {
+      state.cartouche.folio = numStr;
+    }
+  });
+}
+
+function syncCurrentFolioFromState() {
+  if (!Array.isArray(state.folios) || state.folios.length === 0) {
+    state.folios = [{
+      id: 'folio_1',
+      pageFormat: state.pageFormat || 'A4',
+      presetName: state.presetName || 'vide',
+      showWireNumbers: Boolean(state.showWireNumbers),
+      cartouche: JSON.parse(JSON.stringify(state.cartouche)),
+      comps: JSON.parse(JSON.stringify(state.comps)),
+      wires: JSON.parse(JSON.stringify(state.wires))
+    }];
+    state.activeFolioIndex = 0;
+  } else {
+    const idx = Math.min(Math.max(0, state.activeFolioIndex), state.folios.length - 1);
+    state.activeFolioIndex = idx;
+    state.folios[idx] = {
+      id: state.folios[idx]?.id || ('folio_' + (idx + 1)),
+      pageFormat: state.pageFormat || 'A4',
+      presetName: state.presetName || 'vide',
+      showWireNumbers: Boolean(state.showWireNumbers),
+      cartouche: JSON.parse(JSON.stringify(state.cartouche)),
+      comps: JSON.parse(JSON.stringify(state.comps)),
+      wires: JSON.parse(JSON.stringify(state.wires))
+    };
+  }
+}
+
+function renderFolioBar() {
+  const container = document.getElementById('folio-tabs-container');
+  if (!container) return;
+  syncCurrentFolioFromState();
+  container.innerHTML = '';
+
+  state.folios.forEach((f, idx) => {
+    const isAct = idx === state.activeFolioIndex;
+    const wrap = document.createElement('div');
+    wrap.className = `flex items-center rounded border text-[11px] font-semibold transition ${
+      isAct
+        ? 'bg-blue-600 text-white border-blue-400 shadow-sm'
+        : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+    }`;
+
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'px-2 py-0.5 flex items-center gap-1';
+    btn.title = `${f.cartouche?.title || 'Schéma'} — Folio ${idx + 1}/${state.folios.length}`;
+    btn.innerHTML = `<span>📄</span><span>Folio ${idx + 1}</span>`;
+    btn.onclick = () => switchFolio(idx);
+    wrap.appendChild(btn);
+
+    if (state.folios.length > 1) {
+      const delBtn = document.createElement('button');
+      delBtn.type = 'button';
+      delBtn.className = `pr-1.5 pl-0.5 py-0.5 text-[11px] leading-none ${isAct ? 'text-blue-200 hover:text-white' : 'text-slate-400 hover:text-rose-400'}`;
+      delBtn.title = `Supprimer le Folio ${idx + 1}`;
+      delBtn.textContent = '×';
+      delBtn.onclick = e => {
+        e.stopPropagation();
+        deleteFolio(idx);
+      };
+      wrap.appendChild(delBtn);
+    }
+
+    container.appendChild(wrap);
+  });
+}
+
+function switchFolio(index) {
+  if (index < 0 || index >= state.folios.length || index === state.activeFolioIndex) return;
+  syncCurrentFolioFromState();
+  state.activeFolioIndex = index;
+  const target = state.folios[index];
+  state.pageFormat = PAGE_FORMATS[target.pageFormat] ? target.pageFormat : 'A4';
+  state.presetName = target.presetName || 'vide';
+  state.showWireNumbers = Boolean(target.showWireNumbers);
+  state.cartouche = JSON.parse(JSON.stringify(target.cartouche));
+  state.comps = JSON.parse(JSON.stringify(target.comps));
+  state.wires = JSON.parse(JSON.stringify(target.wires));
+  state.selComp = null;
+  state.selWire = null;
+  state.selComps = [];
+  state.selWires = [];
+  state.wireStart = null;
+  updateAllFoliosNumbering();
+  updateFileBadge();
+  updateWireNumButtonUI();
+  renderFolioBar();
+  fitSheet();
+  saveToLocalStorage();
+  showToast(`📄 Passage au Folio ${state.cartouche.folio}`);
+}
+
+function addNewFolio() {
+  syncCurrentFolioFromState();
+  pushHistory(`Ajout du Folio ${state.folios.length + 1}`);
+
+  const newIdx = state.folios.length;
+  const newFolio = {
+    id: 'folio_' + Date.now() + '_' + (newIdx + 1),
+    pageFormat: state.pageFormat || 'A4',
+    presetName: 'vide',
+    showWireNumbers: false,
+    cartouche: {
+      school: state.cartouche.school || 'LP XXXX',
+      title: state.cartouche.title || 'SCHEMA ELECTRIQUE',
+      date: state.cartouche.date || '08/11/2026',
+      author: state.cartouche.author || 'C. BUSSAC',
+      folio: ''
+    },
+    comps: [],
+    wires: []
+  };
+
+  state.folios.push(newFolio);
+  state.activeFolioIndex = newIdx;
+  state.pageFormat = newFolio.pageFormat;
+  state.presetName = 'vide';
+  state.showWireNumbers = false;
+  state.cartouche = JSON.parse(JSON.stringify(newFolio.cartouche));
+  state.comps = [];
+  state.wires = [];
+  state.selComp = null;
+  state.selWire = null;
+  state.selComps = [];
+  state.selWires = [];
+  state.wireStart = null;
+
+  updateAllFoliosNumbering();
+  updateFileBadge();
+  updateWireNumButtonUI();
+  renderFolioBar();
+  fitSheet();
+  saveToLocalStorage();
+  showToast(`➕ Nouveau Folio ajouté (${state.cartouche.folio})`);
+}
+
+let pendingDeleteFolioIndex = null;
+
+function deleteFolio(index) {
+  if (state.folios.length <= 1) {
+    showToast('⚠️ Impossible de supprimer le seul folio du schéma');
+    return;
+  }
+  syncCurrentFolioFromState();
+  pendingDeleteFolioIndex = index;
+  const targetFolio = state.folios[index];
+  const compCount = targetFolio?.comps?.length || 0;
+  const wireCount = targetFolio?.wires?.length || 0;
+  const msgEl = document.getElementById('delete-folio-msg');
+  if (msgEl) {
+    msgEl.textContent = `Autorisez-vous la suppression du Folio ${index + 1} (${compCount} symbole(s), ${wireCount} conducteur(s)) ?`;
+  }
+  const m = document.getElementById('delete-folio-modal');
+  if (m) {
+    m.classList.remove('hidden');
+    m.classList.add('flex');
+  }
+}
+
+function closeDeleteFolioModal() {
+  pendingDeleteFolioIndex = null;
+  const m = document.getElementById('delete-folio-modal');
+  if (m) {
+    m.classList.add('hidden');
+    m.classList.remove('flex');
+  }
+}
+
+function confirmDeleteFolio() {
+  const index = pendingDeleteFolioIndex;
+  closeDeleteFolioModal();
+  if (index === null || index < 0 || index >= state.folios.length || state.folios.length <= 1) return;
+
+  syncCurrentFolioFromState();
+  pushHistory(`Suppression du Folio ${index + 1}`);
+
+  state.folios.splice(index, 1);
+  if (state.activeFolioIndex >= state.folios.length) {
+    state.activeFolioIndex = state.folios.length - 1;
+  } else if (index < state.activeFolioIndex) {
+    state.activeFolioIndex--;
+  }
+
+  const active = state.folios[state.activeFolioIndex];
+  state.pageFormat = PAGE_FORMATS[active.pageFormat] ? active.pageFormat : 'A4';
+  state.presetName = active.presetName || 'vide';
+  state.showWireNumbers = Boolean(active.showWireNumbers);
+  state.cartouche = JSON.parse(JSON.stringify(active.cartouche));
+  state.comps = JSON.parse(JSON.stringify(active.comps));
+  state.wires = JSON.parse(JSON.stringify(active.wires));
+  state.selComp = null;
+  state.selWire = null;
+  state.selComps = [];
+  state.selWires = [];
+  state.wireStart = null;
+
+  updateAllFoliosNumbering();
+  updateFileBadge();
+  updateWireNumButtonUI();
+  renderFolioBar();
+  fitSheet();
+  saveToLocalStorage();
+  showToast(`🗑️ Folio ${index + 1} supprimé`);
+}
 
 function updateWireNumButtonUI() {
   const btn = document.getElementById('btn-wire-num');
@@ -1141,9 +1435,10 @@ function updateFileBadge() {
 
 function saveToLocalStorage() {
   try {
+    syncCurrentFolioFromState();
     const payload = {
       app: 'CBUSSAC Schéma',
-      version: '3.1',
+      version: '3.2',
       savedAt: new Date().toISOString(),
       presetName: state.presetName,
       pageFormat: state.pageFormat || 'A4',
@@ -1151,13 +1446,16 @@ function saveToLocalStorage() {
       showWireNumbers: state.showWireNumbers,
       cartouche: state.cartouche,
       comps: state.comps,
-      wires: state.wires
+      wires: state.wires,
+      folios: state.folios,
+      activeFolioIndex: state.activeFolioIndex
     };
     localStorage.setItem(AUTOSAVE_KEY, JSON.stringify(payload));
   } catch (e) {}
 }
 
 function createSnapshot(actionLabel = '') {
+  syncCurrentFolioFromState();
   return {
     actionLabel,
     presetName: state.presetName,
@@ -1167,6 +1465,8 @@ function createSnapshot(actionLabel = '') {
     cartouche: JSON.parse(JSON.stringify(state.cartouche)),
     comps: JSON.parse(JSON.stringify(state.comps)),
     wires: JSON.parse(JSON.stringify(state.wires)),
+    folios: JSON.parse(JSON.stringify(state.folios)),
+    activeFolioIndex: state.activeFolioIndex,
     selCompId: state.selComp ? state.selComp.id : null
   };
 }
@@ -1188,6 +1488,14 @@ function restoreSnapshot(snapObj) {
   state.cartouche = JSON.parse(JSON.stringify(snapObj.cartouche));
   state.comps = JSON.parse(JSON.stringify(snapObj.comps));
   state.wires = JSON.parse(JSON.stringify(snapObj.wires));
+  if (Array.isArray(snapObj.folios) && snapObj.folios.length > 0) {
+    state.folios = JSON.parse(JSON.stringify(snapObj.folios));
+    state.activeFolioIndex = Math.min(Math.max(0, Number(snapObj.activeFolioIndex) || 0), state.folios.length - 1);
+  } else {
+    state.folios = [];
+    state.activeFolioIndex = 0;
+    syncCurrentFolioFromState();
+  }
   state.selComp = snapObj.selCompId ? (state.comps.find(c => c.id === snapObj.selCompId) || null) : null;
   state.selComps = state.selComp ? [state.selComp] : [];
   state.selWire = null;
@@ -1195,6 +1503,7 @@ function restoreSnapshot(snapObj) {
   state.wireStart = null;
   updateFileBadge();
   updateWireNumButtonUI();
+  renderFolioBar();
   drawAll();
   saveToLocalStorage();
 }
@@ -1262,10 +1571,11 @@ async function confirmSaveProject() {
   updateFileBadge();
   closeSaveModal();
 
+  syncCurrentFolioFromState();
   const fileName = `${baseName}.cbs.json`;
   const payload = JSON.stringify({
     app: 'CBUSSAC Schéma',
-    version: '3.1',
+    version: '3.2',
     savedAt: new Date().toISOString(),
     presetName: state.presetName,
     pageFormat: state.pageFormat || 'A4',
@@ -1273,7 +1583,9 @@ async function confirmSaveProject() {
     showWireNumbers: state.showWireNumbers,
     cartouche: state.cartouche,
     comps: state.comps,
-    wires: state.wires
+    wires: state.wires,
+    folios: state.folios,
+    activeFolioIndex: state.activeFolioIndex
   }, null, 2);
 
   saveToLocalStorage();
@@ -1359,51 +1671,61 @@ function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
 
   state.comps = data.comps
     .filter(c => c && SYMBOLS[c.type])
-    .map(c => ({
-      id: c.id || ('c' + Math.random().toString(36).slice(2, 8)),
-      type: c.type,
-      x: Math.round(Number(c.x) || 200),
-      y: Math.round(Number(c.y) || 200),
-      rot: Number(c.rot) || 0,
-      label: c.label !== undefined ? String(c.label) : '',
-      sub: c.sub !== undefined ? String(c.sub) : '',
-      customTerms: c.customTerms || null,
-      lblDx: typeof c.lblDx === 'number' ? c.lblDx : null,
-      lblDy: typeof c.lblDy === 'number' ? c.lblDy : null,
-      termOffsets: c.termOffsets ? JSON.parse(JSON.stringify(c.termOffsets)) : null,
-      textSize: Number(c.textSize) || 13,
-      textColor: c.textColor || '#0f172a',
-      textBox: Boolean(c.textBox)
-    }));
+    .map(sanitizeCompItem);
 
   const validIds = new Set(state.comps.map(c => c.id));
   state.wires = data.wires
     .filter(w => w && validIds.has(w.c1) && validIds.has(w.c2))
-    .map(w => ({
-      id: w.id || ('w' + Math.random().toString(36).slice(2, 8)),
-      c1: w.c1,
-      t1: Number(w.t1) || 0,
-      c2: w.c2,
-      t2: Number(w.t2) || 0,
-      style: WIRE_STYLES[w.style] ? w.style : 'CMD',
-      midY: w.midY !== undefined ? w.midY : null,
-      midX: w.midX !== undefined ? w.midX : null,
-      num: w.num !== undefined ? w.num : null,
-      numDx: typeof w.numDx === 'number' ? w.numDx : null,
-      numDy: typeof w.numDy === 'number' ? w.numDy : null
-    }));
+    .map(sanitizeWireItem);
 
   state.showWireNumbers = data.showWireNumbers !== undefined
     ? Boolean(data.showWireNumbers)
     : state.wires.some(w => w.num !== null && w.num !== undefined && String(w.num) !== '');
+
+  if (Array.isArray(data.folios) && data.folios.length > 0) {
+    state.folios = data.folios.map((f, idx) => {
+      const fComps = Array.isArray(f.comps) ? f.comps.filter(c => c && SYMBOLS[c.type]).map(sanitizeCompItem) : [];
+      const fValidIds = new Set(fComps.map(c => c.id));
+      const fWires = Array.isArray(f.wires) ? f.wires.filter(w => w && fValidIds.has(w.c1) && fValidIds.has(w.c2)).map(sanitizeWireItem) : [];
+      return {
+        id: f.id || ('folio_' + (idx + 1)),
+        pageFormat: PAGE_FORMATS[f.pageFormat] ? f.pageFormat : (state.pageFormat || 'A4'),
+        presetName: f.presetName || 'custom',
+        showWireNumbers: f.showWireNumbers !== undefined ? Boolean(f.showWireNumbers) : false,
+        cartouche: {
+          school: f.cartouche?.school ?? state.cartouche.school,
+          title:  f.cartouche?.title  ?? state.cartouche.title,
+          date:   f.cartouche?.date   ?? state.cartouche.date,
+          author: f.cartouche?.author ?? state.cartouche.author,
+          folio:  f.cartouche?.folio  ?? `${String(idx + 1).padStart(2, '0')} / ${String(data.folios.length).padStart(2, '0')}`
+        },
+        comps: fComps,
+        wires: fWires
+      };
+    });
+    state.activeFolioIndex = Math.min(Math.max(0, Number(data.activeFolioIndex) || 0), state.folios.length - 1);
+    const active = state.folios[state.activeFolioIndex];
+    state.pageFormat = active.pageFormat;
+    state.presetName = active.presetName;
+    state.showWireNumbers = active.showWireNumbers;
+    state.cartouche = JSON.parse(JSON.stringify(active.cartouche));
+    state.comps = JSON.parse(JSON.stringify(active.comps));
+    state.wires = JSON.parse(JSON.stringify(active.wires));
+  } else {
+    state.folios = [];
+    state.activeFolioIndex = 0;
+    syncCurrentFolioFromState();
+  }
 
   state.selComp = null;
   state.selWire = null;
   state.selComps = [];
   state.selWires = [];
   state.wireStart = null;
+  updateAllFoliosNumbering();
   updateFileBadge();
   updateWireNumButtonUI();
+  renderFolioBar();
   fitSheet();
   saveToLocalStorage();
   showToast(toastMessage);
@@ -1455,9 +1777,15 @@ function confirmNewSheet() {
   state.wireStart = null;
   state.presetName = 'vide';
   state.cartouche.title = titleVal;
+  state.cartouche.folio = '01 / 01';
   state.currentFileName = sanitizeFileName(titleVal) || `nouveau_schema_${selectedNewFormat.toLowerCase()}`;
+  state.folios = [];
+  state.activeFolioIndex = 0;
+  syncCurrentFolioFromState();
+  updateAllFoliosNumbering();
   updateFileBadge();
   updateWireNumButtonUI();
+  renderFolioBar();
   fitSheet();
   saveToLocalStorage();
   showToast(`📄 Nouvelle feuille vierge au format ${selectedNewFormat} prête`);
@@ -3532,12 +3860,23 @@ function zoomStep(f) {
 }
 
 function fitSheet() {
+  const wrap = document.getElementById('canvas-wrap');
+  if (wrap) {
+    const cw = wrap.clientWidth;
+    const ch = wrap.clientHeight;
+    if (cw > 20) viewW = cw;
+    if (ch > 20) viewH = ch;
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = Math.floor(viewW * dpr);
+    canvas.height = Math.floor(viewH * dpr);
+  }
   const { w: SW, h: SH } = getSheetSize();
-  const pad = 24;
-  const sc = Math.min(1.3, Math.max(0.2, Math.min((viewW - pad) / SW, (viewH - pad) / SH)));
+  const pad = 28;
+  const availH = Math.max(200, viewH - 42);
+  const sc = Math.min(1.3, Math.max(0.2, Math.min((viewW - pad) / SW, (availH - pad) / SH)));
   state.zoom = sc;
   state.panX = Math.round((viewW - SW * sc) / 2);
-  state.panY = Math.round((viewH - SH * sc) / 2);
+  state.panY = Math.round((availH - SH * sc) / 2);
   drawAll();
 }
 
@@ -3603,6 +3942,8 @@ function saveCartoucheModal() {
   state.cartouche.author = document.getElementById('cart-author').value.trim();
   state.cartouche.date   = document.getElementById('cart-date').value.trim();
   state.cartouche.folio  = document.getElementById('cart-folio').value.trim();
+  syncCurrentFolioFromState();
+  renderFolioBar();
   drawAll();
   saveToLocalStorage();
   closeCartoucheModal();
@@ -3786,21 +4127,59 @@ function renderSheetDataURL(scale = 2.5, format = 'image/png') {
 }
 
 function printSchema() {
-  const dataUrl = renderSheetDataURL(3);
+  syncCurrentFolioFromState();
+  updateAllFoliosNumbering();
+
+  const savedActiveIdx = state.activeFolioIndex;
+  const savedPageFormat = state.pageFormat;
+  const savedPresetName = state.presetName;
+  const savedShowWireNumbers = state.showWireNumbers;
+  const savedCartouche = JSON.parse(JSON.stringify(state.cartouche));
+  const savedComps = JSON.parse(JSON.stringify(state.comps));
+  const savedWires = JSON.parse(JSON.stringify(state.wires));
+
   let pContainer = document.getElementById('print-container');
   if (pContainer) pContainer.remove();
 
   pContainer = document.createElement('div');
   pContainer.id = 'print-container';
-  
-  const img = document.createElement('img');
-  img.src = dataUrl;
-  img.alt = 'Impression CBUSSAC Schéma';
-  pContainer.appendChild(img);
+
+  const totalFolios = state.folios.length;
+  for (let i = 0; i < totalFolios; i++) {
+    const f = state.folios[i];
+    state.activeFolioIndex = i;
+    state.pageFormat = PAGE_FORMATS[f.pageFormat] ? f.pageFormat : 'A4';
+    state.presetName = f.presetName || 'vide';
+    state.showWireNumbers = Boolean(f.showWireNumbers);
+    state.cartouche = JSON.parse(JSON.stringify(f.cartouche));
+    state.comps = JSON.parse(JSON.stringify(f.comps));
+    state.wires = JSON.parse(JSON.stringify(f.wires));
+
+    const dataUrl = renderSheetDataURL(3);
+    const pageDiv = document.createElement('div');
+    pageDiv.className = 'print-page';
+
+    const img = document.createElement('img');
+    img.src = dataUrl;
+    img.alt = `Impression CBUSSAC Schéma - Folio ${i + 1}`;
+    pageDiv.appendChild(img);
+    pContainer.appendChild(pageDiv);
+  }
+
+  // Restauration de l'état du folio actif
+  state.activeFolioIndex = savedActiveIdx;
+  state.pageFormat = savedPageFormat;
+  state.presetName = savedPresetName;
+  state.showWireNumbers = savedShowWireNumbers;
+  state.cartouche = savedCartouche;
+  state.comps = savedComps;
+  state.wires = savedWires;
+  updateCanvasSize();
+
   document.body.appendChild(pContainer);
 
-  showToast('🖨️ Ouverture de la boîte d\'impression...');
-  
+  showToast(`🖨️ Préparation de l'impression (${totalFolios} folio${totalFolios > 1 ? 's' : ''})...`);
+
   setTimeout(() => {
     window.print();
     setTimeout(() => {
@@ -3808,7 +4187,7 @@ function printSchema() {
         pContainer.parentNode.removeChild(pContainer);
       }
     }, 1000);
-  }, 120);
+  }, 180);
 }
 
 function exportJPG() {
@@ -3848,10 +4227,16 @@ function loadPreset(name, recordHistory = false) {
   }
   state.comps = []; state.wires = []; state.selComp = null; state.selWire = null; state.selComps = []; state.selWires = []; state.wireStart = null;
   state.presetName = name;
+  state.folios = [];
+  state.activeFolioIndex = 0;
   if (name === 'vide') {
     state.cartouche.title = 'NOUVEAU SCHEMA ELECTRIQUE';
+    state.cartouche.folio = '01 / 01';
     state.currentFileName = 'nouveau_schema';
+    syncCurrentFolioFromState();
+    updateAllFoliosNumbering();
     updateFileBadge();
+    renderFolioBar();
     fitSheet();
     saveToLocalStorage();
     return;
@@ -4022,11 +4407,19 @@ function loadPreset(name, recordHistory = false) {
   if (state.showWireNumbers) {
     computeEquipotentialWireNumbers();
   }
+  syncCurrentFolioFromState();
+  updateAllFoliosNumbering();
   updateFileBadge();
   updateWireNumButtonUI();
+  renderFolioBar();
   fitSheet();
   saveToLocalStorage();
 }
+
+/* ============================================================================
+   8. REDIMENSIONNEMENT DU CANEVAS & INITIALISATION
+   ============================================================================ */
+let hasInitialFit = false;
 
 function updateCanvasSize() {
   const wrap = document.getElementById('canvas-wrap');
@@ -4037,13 +4430,35 @@ function updateCanvasSize() {
   viewH = ch > 20 ? ch : ((window.innerHeight - 52) || 650);
   canvas.width = Math.floor(viewW * dpr);
   canvas.height = Math.floor(viewH * dpr);
-  drawAll();
+  if (!hasInitialFit && cw > 20 && ch > 20) {
+    hasInitialFit = true;
+    fitSheet();
+  } else {
+    drawAll();
+  }
 }
 
-renderLibrary();
-updateCanvasSize();
-loadPreset('pdf_2sens', false);
-updateHistoryButtons();
+let appInitialized = false;
+function initApp() {
+  if (appInitialized) return;
+  appInitialized = true;
+  renderLibrary();
+  updateCanvasSize();
+  loadPreset('pdf_2sens', false);
+  updateHistoryButtons();
+  requestAnimationFrame(() => {
+    updateCanvasSize();
+    fitSheet();
+    renderLibrary();
+  });
+}
+
+initApp();
+window.addEventListener('load', () => {
+  updateCanvasSize();
+  fitSheet();
+  renderLibrary();
+});
 
 if (typeof ResizeObserver !== 'undefined') {
   new ResizeObserver(() => { updateCanvasSize(); }).observe(document.getElementById('canvas-wrap'));
