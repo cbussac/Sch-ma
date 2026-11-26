@@ -16,7 +16,7 @@
       #sidebar { position: absolute; left: 0; top: 0; bottom: 0; transform: translateX(-100%); box-shadow: 8px 0 24px rgba(0,0,0,0.45); }
       #sidebar.open { transform: translateX(0); }
     }
-    .tool-btn.active { background: #2563eb !important; color: #fff !important; border-color: #60a5fa !important; }
+    .tool-btn.active, .wire-num-active { background: #2563eb !important; color: #fff !important; border-color: #60a5fa !important; }
     .sym-card { transition: all 0.12s ease; }
     .sym-card:hover { background: #334155; border-color: #60a5fa; transform: translateY(-1px); }
     .sym-card.active { background: #1d4ed8; border-color: #93c5fd; box-shadow: 0 0 0 2px rgba(59,130,246,0.45); }
@@ -451,6 +451,22 @@ function R(g, x, y, w, h, fill = '#ffffff') {
   if (fill) { g.fillStyle = fill; g.fillRect(x, y, w, h); }
   g.strokeRect(x, y, w, h);
 }
+function RR(g, x, y, w, h, r, fill = null) {
+  const rad = Math.min(r, w / 2, h / 2);
+  g.beginPath();
+  g.moveTo(x + rad, y);
+  g.lineTo(x + w - rad, y);
+  g.quadraticCurveTo(x + w, y, x + w, y + rad);
+  g.lineTo(x + w, y + h - rad);
+  g.quadraticCurveTo(x + w, y + h, x + w - rad, y + h);
+  g.lineTo(x + rad, y + h);
+  g.quadraticCurveTo(x, y + h, x, y + h - rad);
+  g.lineTo(x, y + rad);
+  g.quadraticCurveTo(x, y, x + rad, y);
+  g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  g.stroke();
+}
 function TXT(g, s, x, y, sz = 9, col = '#0f172a', align = 'center') {
   g.save(); g.fillStyle = col; g.font = `bold ${sz}px sans-serif`;
   g.textAlign = align; g.textBaseline = 'middle'; g.fillText(s, x, y); g.restore();
@@ -871,6 +887,163 @@ const SYMBOLS = {
       L(g, 8.5, -8.5, -8.5, 8.5);
     }
   },
+  API_TM221CE24R: {
+    cat: 'CMD', name: 'Automate TM221CE24R (M221)', pref: 'API', sub: '',
+    hitBox: { hw: 200, hh: 162 },
+    terms: [
+      { x: -180, y: -160, n: '' }, { x: -160, y: -160, n: '' }, { x: -140, y: -160, n: '' },
+      { x: -120, y: -160, n: '' }, { x: -100, y: -160, n: '' }, { x: -80,  y: -160, n: '' },
+      { x: -60,  y: -160, n: '' }, { x: -40,  y: -160, n: '' }, { x: -20,  y: -160, n: '' },
+      { x: 0,    y: -160, n: '' }, { x: 20,   y: -160, n: '' }, { x: 40,   y: -160, n: '' },
+      { x: 60,   y: -160, n: '' },
+      { x: 100,  y: -160, n: '' }, { x: 120,  y: -160, n: '' },
+      { x: -180, y: 160,  n: '' }, { x: -160, y: 160,  n: '' }, { x: -140, y: 160,  n: '' },
+      { x: -120, y: 160,  n: '' }, { x: -100, y: 160,  n: '' }, { x: -80,  y: 160,  n: '' },
+      { x: -60,  y: 160,  n: '' }, { x: -40,  y: 160,  n: '' }, { x: -20,  y: 160,  n: '' },
+      { x: 0,    y: 160,  n: '' }, { x: 20,   y: 160,  n: '' }, { x: 40,   y: 160,  n: '' },
+      { x: 60,   y: 160,  n: '' }, { x: 80,   y: 160,  n: '' }, { x: 100,  y: 160,  n: '' },
+      { x: 120,  y: 160,  n: '' }, { x: 140,  y: 160,  n: '' }
+    ],
+    draw(g, c) {
+      const rot = (((c && c.rot) || 0) % 360 + 360) % 360;
+      const flipPinText = (rot === 90 || rot === 180);
+      const drawPinTxt = (s, x, y, sz) => {
+        if (!flipPinText) {
+          TXT(g, s, x, y, sz, '#0f172a', 'center');
+        } else {
+          g.save();
+          g.translate(x, y);
+          g.rotate(Math.PI);
+          TXT(g, s, 0, 0, sz, '#0f172a', 'center');
+          g.restore();
+        }
+      };
+
+      const topLabels = ['Q9','Q8','COM2','Q7','Q6','Q5','Q4','COM1','Q3','Q2','Q1','Q0','COM0'];
+      const botLeftLabels = ['I13','I12','I11','I10','I9','I8','I7','I6','I5'];
+      const botRightLabels = ['I4','I3','I2','I1','I0','COM','0V','24V'];
+
+      // Clip / bloc d'accrochage supérieur droit
+      RR(g, 134, -184, 62, 42, 4, '#ffffff');
+      L(g, 134, -178, 196, -178);
+      POLY(g, [[142, -142], [142, -166], [156, -166], [156, -156], [162, -156], [162, -166], [174, -166], [174, -156], [180, -156], [180, -166], [192, -166], [192, -142]]);
+
+      // Boîtier principal de l'automate
+      R(g, -200, -142, 400, 284, '#ffffff');
+
+      // Capot central avant arrondi + référence TM221CE24R (toujours horizontale et à l'endroit)
+      RR(g, -194, -64, 336, 132, 18, '#ffffff');
+      g.save();
+      g.translate(-126, -12);
+      g.rotate((-rot * Math.PI) / 180);
+      TXT(g, 'TM221CE24R', 0, 0, 11, '#0f172a', 'center');
+      g.restore();
+
+      // Port RJ45 supérieur (Ethernet)
+      RR(g, 82, -134, 58, 60, 5, '#ffffff');
+      POLY(g, [[92, -92], [130, -92], [130, -118], [122, -118], [122, -123], [117, -123], [117, -128], [105, -128], [105, -123], [100, -123], [100, -118], [92, -118]], true);
+
+      // Port RJ45 central (Série)
+      RR(g, 84, -54, 54, 54, 3, '#ffffff');
+      POLY(g, [[93, -44], [129, -44], [129, -20], [122, -20], [122, -15], [117, -15], [117, -10], [105, -10], [105, -15], [100, -15], [100, -20], [93, -20]], true);
+
+      // Volet latéral droit (haut et bas)
+      g.beginPath();
+      g.moveTo(200, -138);
+      g.lineTo(166, -138);
+      g.quadraticCurveTo(150, -138, 150, -120);
+      g.lineTo(150, 52);
+      g.quadraticCurveTo(150, 70, 166, 70);
+      g.lineTo(200, 70);
+      g.stroke();
+      g.beginPath();
+      g.moveTo(200, -132);
+      g.lineTo(166, -132);
+      g.quadraticCurveTo(154, -132, 154, -118);
+      g.lineTo(154, 50);
+      g.quadraticCurveTo(154, 64, 166, 64);
+      g.lineTo(200, 64);
+      g.stroke();
+      L(g, 150, -68, 200, -68);
+      L(g, 150, -60, 200, -60);
+
+      // Bornier supérieur gauche (Q9 à COM0)
+      g.beginPath();
+      g.moveTo(-194, -142);
+      g.lineTo(-194, -114);
+      g.quadraticCurveTo(-194, -104, -184, -104);
+      g.lineTo(66, -104);
+      g.quadraticCurveTo(76, -104, 76, -114);
+      g.lineTo(76, -142);
+      g.stroke();
+      R(g, -190, -150, 260, 42, '#ffffff');
+      L(g, -190, -144, 70, -144);
+
+      topLabels.forEach((lbl, idx) => {
+        const px = -180 + idx * 20;
+        C(g, px, -131, 7.2, '#ffffff');
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, -160, px, -138.5);
+        g.restore();
+        const fz = lbl.length >= 4 ? 6.2 : 8;
+        drawPinTxt(lbl, px, -116, fz);
+      });
+
+      // Bornes alimentation supérieure droite : 0V (N) et 220V (L)
+      g.save();
+      g.strokeStyle = '#ef4444';
+      L(g, 100, -160, 100, -142);
+      L(g, 120, -160, 120, -142);
+      g.restore();
+
+      const flipPowerText = (rot === 180 || rot === 270);
+      [['0V (N)', 106], ['220V (L)', 126]].forEach(([lbl, tx]) => {
+        g.save();
+        g.translate(tx, -145);
+        g.rotate(flipPowerText ? Math.PI / 2 : -Math.PI / 2);
+        TXT(g, lbl, 0, 0, 8, '#0f172a', flipPowerText ? 'right' : 'left');
+        g.restore();
+      });
+
+      // Encadrement bas autour des deux borniers d'entrées
+      g.beginPath();
+      g.moveTo(-194, 142);
+      g.lineTo(-194, 114);
+      g.quadraticCurveTo(-194, 104, -184, 104);
+      g.lineTo(146, 104);
+      g.quadraticCurveTo(156, 104, 156, 114);
+      g.lineTo(156, 142);
+      g.stroke();
+
+      // Bornier inférieur gauche (I13 à I5)
+      R(g, -190, 108, 179, 44, '#ffffff');
+      L(g, -190, 122, -11, 122);
+      botLeftLabels.forEach((lbl, idx) => {
+        const px = -180 + idx * 20;
+        drawPinTxt(lbl, px, 115, 7.8);
+        C(g, px, 133, 7.2, '#ffffff');
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, 140.5, px, 160);
+        g.restore();
+      });
+
+      // Bornier inférieur droit (I4 à 24V)
+      R(g, -9, 108, 159, 44, '#ffffff');
+      L(g, -9, 122, 150, 122);
+      botRightLabels.forEach((lbl, idx) => {
+        const px = 0 + idx * 20;
+        const fz = lbl.length >= 3 ? 6.8 : 7.8;
+        drawPinTxt(lbl, px, 115, fz);
+        C(g, px, 133, 7.2, '#ffffff');
+        g.save();
+        g.strokeStyle = '#ef4444';
+        L(g, px, 140.5, px, 160);
+        g.restore();
+      });
+    }
+  },
   BORNE: {
     cat: 'BORN', name: 'Borne (X1..X12 / Y1..Y6 / Xpe)', pref: 'X', sub: '',
     terms: [{ x: 0, y: -8, n: '' }, { x: 0, y: 8, n: '' }],
@@ -1108,7 +1281,6 @@ const SYMBOLS = {
       { x: 40,  y: 20,  n: '3' }
     ],
     draw(g) {
-      C(g, 0, 0, 24, '#ffffff');
       g.save();
       g.strokeStyle = '#ef4444';
       L(g, -40, 0, -29, 0);
@@ -1493,11 +1665,7 @@ function updateWireNumButtonUI() {
   const btn = document.getElementById('btn-wire-num');
   if (!btn) return;
   const hasNums = state.showWireNumbers && state.wires.some(w => w.num !== undefined && w.num !== null && String(w.num) !== '');
-  if (hasNums) {
-    btn.classList.add('tool-btn', 'active');
-  } else {
-    btn.classList.remove('active');
-  }
+  btn.classList.toggle('wire-num-active', hasNums);
 }
 
 function updateFileBadge() {
@@ -1722,13 +1890,15 @@ function readAndLoadFile(file) {
   reader.readAsText(file);
 }
 
-function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
+function loadProjectObject(data, toastMessage = '📂 Schéma chargé', recordHistory = true) {
   if (!data || !Array.isArray(data.comps) || !Array.isArray(data.wires)) {
-    showToast('⚠️ Format de schéma invalide.');
-    return;
+    if (toastMessage) showToast('⚠️ Format de schéma invalide.');
+    return false;
   }
 
-  pushHistory('Ouverture de schéma');
+  if (recordHistory) {
+    pushHistory('Ouverture de schéma');
+  }
 
   state.presetName = data.presetName || 'custom';
   state.pageFormat = PAGE_FORMATS[data.pageFormat] ? data.pageFormat : 'A4';
@@ -1802,7 +1972,8 @@ function loadProjectObject(data, toastMessage = '📂 Schéma chargé') {
   renderFolioBar();
   fitSheet();
   saveToLocalStorage();
-  showToast(toastMessage);
+  if (toastMessage) showToast(toastMessage);
+  return true;
 }
 
 let selectedNewFormat = 'A4';
@@ -2096,6 +2267,7 @@ function getDefaultLabelOffset(c) {
   if (c.type === 'T_TRANSFO_1' || c.type === 'T_TRANSFO_2') return { dx: 52, dy: 2, sz: 11.5 };
   if (c.type === 'KM_BOBINE') return { dx: -20, dy: 2, sz: 9.5 };
   if (c.type === 'H_VOYANT') return { dx: -17, dy: 2, sz: 9.5 };
+  if (c.type === 'API_TM221CE24R') return { dx: -208, dy: -115, sz: 11.5, align: 'right' };
   if (c.type === 'DISJ_1PN' || c.type === 'DISJ_DIFF_1PN') return { dx: -56, dy: -20, sz: 11.5 };
   if (c.type === 'Q_DISJ_MOT_3P') return { dx: -106, dy: -26, sz: 11.5 };
   if (c.type === 'Q_SECT') return { dx: 98, dy: 2, sz: 11.5 };
@@ -2164,7 +2336,7 @@ function getDefaultTermLabelSpec(c, t) {
     return { dx: 6, dy, sz: 8.5, align: 'left' };
   }
   if (c.type === 'DOM_VV') {
-    return { dx: t.x < 0 ? 8 : -9, dy: -9, sz: 8.5, align: 'center' };
+    return { dx: t.x < c.x ? 8 : -9, dy: -9, sz: 8.5, align: 'center' };
   }
   if (c.type === 'DOM_INTER') {
     return { dx: 8, dy: 0, sz: 8.5, align: 'left' };
@@ -2954,7 +3126,7 @@ function drawSingleComp(c, isGhost) {
   }
 
   getTerms(c).forEach(t => {
-    if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'Q_SECT' || c.type === 'Q_DISJ_MOT_3P' || c.type === 'DISJ_1PN' || c.type === 'DISJ_DIFF_1PN' || c.type === 'KM_CONT_3P' || c.type === 'T_TRANSFO_1' || c.type === 'T_TRANSFO_2' || c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98' || c.type === 'KM_TEMP_NC_REPOS' || c.type === 'KM_TEMP_NO_REPOS' || c.type === 'KM_TEMP_NC_TRAVAIL' || c.type === 'KM_TEMP_NO_TRAVAIL' || c.type === 'BORNE' || c.type === 'TERRE' || c.type === 'DOM_VV' || c.type === 'DOM_INTER' || c.type === 'DOM_TL') {
+    if (c.type === 'F_THERM_3P' || c.type === 'Q_SECT_3P' || c.type === 'Q_SECT' || c.type === 'Q_DISJ_MOT_3P' || c.type === 'DISJ_1PN' || c.type === 'DISJ_DIFF_1PN' || c.type === 'KM_CONT_3P' || c.type === 'T_TRANSFO_1' || c.type === 'T_TRANSFO_2' || c.type === 'F_NC_95_96' || c.type === 'F_NO_97_98' || c.type === 'KM_TEMP_NC_REPOS' || c.type === 'KM_TEMP_NO_REPOS' || c.type === 'KM_TEMP_NC_TRAVAIL' || c.type === 'KM_TEMP_NO_TRAVAIL' || c.type === 'BORNE' || c.type === 'TERRE' || c.type === 'DOM_VV' || c.type === 'DOM_INTER' || c.type === 'DOM_TL' || c.type === 'API_TM221CE24R') {
       ctx.save(); ctx.strokeStyle = '#ef4444';
       R(ctx, t.x - 3, t.y - 3, 6, 6, '#ef4444');
       ctx.restore();
@@ -3019,7 +3191,8 @@ function renderLibrary() {
     g.translate(26, 26);
     const maxX = def.terms.reduce((m, t) => Math.max(m, Math.abs(t.x)), 0);
     const maxY = def.terms.reduce((m, t) => Math.max(m, Math.abs(t.y)), 0);
-    const sc = (maxX >= 50 || maxY >= 55) ? 0.34 : (maxX >= 35 ? 0.42 : 0.52);
+    const maxDim = Math.max(maxX + 20, maxY + 20);
+    const sc = maxDim > 75 ? Math.min(0.34, 22 / maxDim) : ((maxX >= 50 || maxY >= 55) ? 0.34 : (maxX >= 35 ? 0.42 : 0.52));
     g.scale(sc, sc);
     g.strokeStyle = '#0f172a'; g.lineWidth = 2.4; g.lineCap = 'round'; g.lineJoin = 'round';
     def.draw(g);
@@ -3084,6 +3257,15 @@ function findCompAt(wx, wy) {
       const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
       const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
       if (Math.abs(lx) <= tb.w / 2 + 4 && Math.abs(ly) <= tb.h / 2 + 4) return c;
+      continue;
+    }
+    const def = SYMBOLS[c.type];
+    if (def && def.hitBox) {
+      const rad = -((c.rot || 0) * Math.PI) / 180;
+      const dx = wx - c.x, dy = wy - c.y;
+      const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
+      const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
+      if (Math.abs(lx) <= def.hitBox.hw && Math.abs(ly) <= def.hitBox.hh) return c;
       continue;
     }
     const hitR = c.type === 'PT_CONN' ? 6 : (c.type === 'BORNE' ? 12 : 28);
@@ -3443,6 +3625,9 @@ function finalizePointerUp() {
         deleteSelected();
         return;
       }
+      if (state.tool !== 'select') {
+        setTool('select');
+      }
       if (nC + nW > 1) {
         document.getElementById('status-text').textContent = `Sélection : ${nC} symbole(s), ${nW} fil(s)`;
       } else {
@@ -3770,15 +3955,44 @@ canvas.addEventListener('dblclick', e => {
   }
 });
 
+function getOpenModalId() {
+  const modalIds = ['new-modal', 'save-modal', 'edit-modal', 'cartouche-modal', 'text-modal', 'wire-num-modal', 'delete-folio-modal'];
+  return modalIds.find(id => {
+    const el = document.getElementById(id);
+    return el && !el.classList.contains('hidden');
+  }) || null;
+}
+
+function closeOpenModals() {
+  closeNewModal();
+  closeSaveModal();
+  closeEditModal();
+  closeCartoucheModal();
+  closeTextModal();
+  closeWireNumModal();
+  closeDeleteFolioModal();
+}
+
 window.addEventListener('keydown', e => {
-  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
-    if (e.key === 'Enter' && !document.getElementById('save-modal').classList.contains('hidden')) {
+  const openModal = getOpenModalId();
+  if (openModal) {
+    if (e.key === 'Escape') {
       e.preventDefault();
-      confirmSaveProject();
-    } else if (e.key === 'Enter' && !document.getElementById('new-modal').classList.contains('hidden')) {
-      e.preventDefault();
-      confirmNewSheet();
+      closeOpenModals();
+      return;
     }
+    if (e.key === 'Enter' && (e.target.tagName !== 'TEXTAREA' || e.ctrlKey || e.metaKey)) {
+      if (openModal === 'save-modal') { e.preventDefault(); confirmSaveProject(); }
+      else if (openModal === 'new-modal') { e.preventDefault(); confirmNewSheet(); }
+      else if (openModal === 'edit-modal') { e.preventDefault(); saveEditModal(); }
+      else if (openModal === 'cartouche-modal') { e.preventDefault(); saveCartoucheModal(); }
+      else if (openModal === 'wire-num-modal') { e.preventDefault(); saveWireNumModal(); }
+      else if (openModal === 'text-modal' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); saveTextModal(); }
+    }
+    return;
+  }
+
+  if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT') {
     return;
   }
 
@@ -4164,7 +4378,7 @@ function renderSheetDataURL(scale = 2.5, format = 'image/png') {
   state.hoverTermLabel = null;
   state.hoverWireSeg = null;
   state.hoverWireNum = null;
-  if (state.tool === 'place') state.tool = 'select';
+  if (state.tool === 'place' || state.tool === 'text') state.tool = 'select';
 
   canvas.width = Math.floor(SW * scale);
   canvas.height = Math.floor(SH * scale);
@@ -4280,8 +4494,11 @@ function exportJPG() {
 function exportSVG() {
   const { w: SW, h: SH } = getSheetSize();
   const dataUrl = renderSheetDataURL(2.5);
+  const safeTitle = String(state.cartouche.title || '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;').replace(/'/g, '&apos;');
   const svgContent = `<svg xmlns="http://www.w3.org/2000/svg" width="${SW}" height="${SH}" viewBox="0 0 ${SW} ${SH}">
-  <title>CBUSSAC Schéma - ${state.cartouche.title}</title>
+  <title>CBUSSAC Schéma - ${safeTitle}</title>
   <image width="${SW}" height="${SH}" href="${dataUrl}"/>
 </svg>`;
   const blob = new Blob([svgContent], { type: 'image/svg+xml;charset=utf-8' });
@@ -4355,6 +4572,8 @@ function loadPreset(name, recordHistory = false) {
     addWire(km1, 5, f1, 2, 'PHASE');
 
     if (is2Sens) {
+      km1.lblDx = -54;
+      km1.lblDy = 2;
       addComp('VERR_MECA', 300, 380, '', '');
       const km2 = addComp('KM_CONT_3P', 380, 380, 'KM2', '');
 
@@ -4408,7 +4627,6 @@ function loadPreset(name, recordHistory = false) {
     const km1no    = addComp('KM_NO',     760, 456, 'KM1', '');
     const jSens1   = pt(680, 536);
     const x7       = borne(680, 564, 'X7');
-    const km2nc    = addComp('KM_NC',     680, 616, 'KM2', '');
     const bob1     = addComp('KM_BOBINE', 680, 684, 'KM1', '');
 
     addWire(pDist1, 0, s2, 0, 'CMD');
@@ -4418,8 +4636,13 @@ function loadPreset(name, recordHistory = false) {
     addWire(pDistKM1, 0, km1no, 0, 'CMD');
     addWire(km1no, 1, jSens1, 0, 'CMD', 'VH');
     addWire(jSens1, 0, x7, 0, 'CMD');
-    addWire(x7, 1, km2nc, 0, 'CMD');
-    addWire(km2nc, 1, bob1, 0, 'CMD');
+    if (is2Sens) {
+      const km2nc = addComp('KM_NC', 680, 616, 'KM2', '');
+      addWire(x7, 1, km2nc, 0, 'CMD');
+      addWire(km2nc, 1, bob1, 0, 'CMD');
+    } else {
+      addWire(x7, 1, bob1, 0, 'CMD');
+    }
     addWire(bob1, 1, bot24L, 0, 'CMD');
 
     let lastTopDist = pDistKM1;
