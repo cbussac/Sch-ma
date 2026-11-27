@@ -2428,45 +2428,130 @@ function hasHorizontalOverlap(yLevel, x1, x2) {
   return false;
 }
 
+function hasVerticalOverlap(xLevel, y1, y2) {
+  const minY = Math.min(y1, y2), maxY = Math.max(y1, y2);
+  for (const w of state.wires) {
+    const pts = wirePoints(w);
+    for (let i = 0; i < pts.length - 1; i++) {
+      const a = pts[i], b = pts[i + 1];
+      if (a[0] === b[0] && Math.abs(a[0] - xLevel) < 6) {
+        const wMin = Math.min(a[1], b[1]), wMax = Math.max(a[1], b[1]);
+        if (Math.max(minY, wMin) < Math.min(maxY, wMax)) return true;
+      }
+    }
+  }
+  return false;
+}
+
+function getCompBodyHalfSize(c) {
+  const def = SYMBOLS[c.type];
+  if (!def) return null;
+  if (def.hitBox) {
+    const isRot90 = (((c.rot || 0) % 180) + 180) % 180 === 90;
+    return {
+      hw: (isRot90 ? def.hitBox.hh : def.hitBox.hw) - 6,
+      hh: (isRot90 ? def.hitBox.hw : def.hitBox.hh) - 6
+    };
+  }
+  const terms = getTerms(c);
+  if (terms.length === 0) return null;
+  return {
+    hw: Math.max(14, terms.reduce((m, t) => Math.max(m, Math.abs(t.x - c.x)), 0) - 4),
+    hh: Math.max(14, terms.reduce((m, t) => Math.max(m, Math.abs(t.y - c.y)), 0) - 4)
+  };
+}
+
+function hasCompBodyOverlap(yLevel, x1, x2) {
+  const minX = Math.min(x1, x2), maxX = Math.max(x1, x2);
+  for (const c of state.comps) {
+    if (c.type === 'PT_CONN' || c.type === 'BORNE' || c.type === 'TEXTE') continue;
+    const sz = getCompBodyHalfSize(c);
+    if (!sz) continue;
+    if (yLevel > c.y - sz.hh && yLevel < c.y + sz.hh && maxX > c.x - sz.hw && minX < c.x + sz.hw) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function hasVerticalCompBodyOverlap(xLevel, y1, y2) {
+  const minY = Math.min(y1, y2) + 4, maxY = Math.max(y1, y2) - 4;
+  if (minY >= maxY) return false;
+  for (const c of state.comps) {
+    if (c.type === 'PT_CONN' || c.type === 'BORNE' || c.type === 'TEXTE') continue;
+    const sz = getCompBodyHalfSize(c);
+    if (!sz) continue;
+    if (xLevel > c.x - sz.hw && xLevel < c.x + sz.hw && maxY > c.y - sz.hh && minY < c.y + sz.hh) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function computeSmartMidX(c1, t1Idx, c2, t2Idx, requestedMidX = null) {
+  if (requestedMidX !== null && requestedMidX !== undefined) return requestedMidX;
+  const p1 = getTerms(c1)[t1Idx], p2 = getTerms(c2)[t2Idx];
+  if (!p1 || !p2 || p1.x !== p2.x || p1.y === p2.y) return null;
+
+  const minY = Math.min(p1.y, p2.y), maxY = Math.max(p1.y, p2.y);
+  const hitsOtherTerm = state.comps.some(c =>
+    getTerms(c).some(t => t.x === p1.x && t.y > minY && t.y < maxY)
+  );
+  const needsDetour = (c1.id === c2.id) || hitsOtherTerm || hasVerticalOverlap(p1.x, minY, maxY) || hasVerticalCompBodyOverlap(p1.x, minY, maxY);
+  if (!needsDetour) return null;
+
+  const blocked = x => hasVerticalOverlap(x, minY, maxY) || hasVerticalCompBodyOverlap(x, minY, maxY);
+  const baseX = snap(p1.x);
+  for (let step = 1; step <= 14; step++) {
+    for (const sgn of [1, -1]) {
+      const candX = baseX + sgn * step * 20;
+      if (!blocked(candX)) return candX;
+    }
+  }
+  return baseX + 20;
+}
+
 function computeSmartMidY(c1, t1Idx, c2, t2Idx, requestedMidY = null) {
   if (requestedMidY !== null && requestedMidY !== undefined) return requestedMidY;
   const p1 = getTerms(c1)[t1Idx], p2 = getTerms(c2)[t2Idx];
   if (!p1 || !p2 || p1.x === p2.x) return null;
 
   const minX = Math.min(p1.x, p2.x), maxX = Math.max(p1.x, p2.x);
+  const blocked = y => hasHorizontalOverlap(y, minX, maxX) || hasCompBodyOverlap(y, minX, maxX);
 
   if (p1.y === p2.y) {
     const hitsOtherTerm = state.comps.some(c =>
       getTerms(c).some(t => t.y === p1.y && t.x > minX && t.x < maxX)
     );
-    if (!hitsOtherTerm && !hasHorizontalOverlap(p1.y, minX, maxX)) return null;
+    if (!hitsOtherTerm && !blocked(p1.y)) return null;
 
     const dir = (p1.y <= c1.y) ? -1 : 1;
-    for (let step = 1; step <= 8; step++) {
+    for (let step = 1; step <= 12; step++) {
       const candY = p1.y + dir * (step * 16 + 12);
-      if (!hasHorizontalOverlap(candY, minX, maxX)) return candY;
+      if (!blocked(candY)) return candY;
     }
     return p1.y + dir * 40;
   }
 
   const baseY = snap((p1.y + p2.y) / 2);
-  if (!hasHorizontalOverlap(baseY, minX, maxX)) return baseY;
-  for (let step = 1; step <= 6; step++) {
+  if (!blocked(baseY)) return baseY;
+  for (let step = 1; step <= 14; step++) {
     for (const sgn of [-1, 1]) {
-      const candY = baseY + sgn * step * 16;
-      if (!hasHorizontalOverlap(candY, minX, maxX)) return candY;
+      const candY = baseY + sgn * step * 20;
+      if (!blocked(candY)) return candY;
     }
   }
   return baseY;
 }
 
 function addWire(c1, t1, c2, t2, style = 'CMD', midY = null, midX = null) {
-  const finalMidY = (midX !== null && midX !== undefined) ? null : computeSmartMidY(c1, t1, c2, t2, midY);
+  const finalMidX = (midY !== null && midY !== undefined) ? null : computeSmartMidX(c1, t1, c2, t2, midX);
+  const finalMidY = (finalMidX !== null && finalMidX !== undefined) ? null : computeSmartMidY(c1, t1, c2, t2, midY);
   const newW = {
     id: 'w' + Math.random().toString(36).slice(2, 8),
     c1: c1.id, t1, c2: c2.id, t2, style,
     midY: finalMidY,
-    midX: midX !== undefined ? midX : null,
+    midX: finalMidX !== undefined ? finalMidX : null,
     num: null,
     numDx: null,
     numDy: null
@@ -2903,6 +2988,8 @@ function drawAll(overrideDpr = null) {
     TXT(ctx, '24V', 658, 60, 8.5, '#0f172a', 'right');
   }
 
+  state.comps.forEach(c => drawSingleComp(c, false));
+
   const nodeMap = new Map();
   const allSegments = [];
   const markNode = (x, y, col, weight = 1) => {
@@ -2992,14 +3079,19 @@ function drawAll(overrideDpr = null) {
     const st = WIRE_STYLES[state.wireType] || WIRE_STYLES.CMD;
     const tx = state.hoverTerm ? state.hoverTerm.x : snap(state.mouseW.x);
     const ty = state.hoverTerm ? state.hoverTerm.y : snap(state.mouseW.y);
-    const my = snap((state.wireStart.y + ty) / 2);
+    const previewMidX = state.hoverTerm
+      ? computeSmartMidX(state.wireStart.comp, state.wireStart.idx, state.hoverTerm.comp, state.hoverTerm.idx)
+      : null;
     DASH(ctx, [5, 4], () => {
       ctx.strokeStyle = st.col; ctx.lineWidth = st.w;
-      POLY(ctx, [[state.wireStart.x, state.wireStart.y], [state.wireStart.x, my], [tx, my], [tx, ty]]);
+      if (typeof previewMidX === 'number') {
+        POLY(ctx, [[state.wireStart.x, state.wireStart.y], [previewMidX, state.wireStart.y], [previewMidX, ty], [tx, ty]]);
+      } else {
+        const my = snap((state.wireStart.y + ty) / 2);
+        POLY(ctx, [[state.wireStart.x, state.wireStart.y], [state.wireStart.x, my], [tx, my], [tx, ty]]);
+      }
     });
   }
-
-  state.comps.forEach(c => drawSingleComp(c, false));
 
   if (state.tool === 'place' && state.placeType) {
     ctx.save(); ctx.globalAlpha = 0.55;
@@ -3538,7 +3630,7 @@ function onPointerDown(sx, sy, btn = 0, shiftKey = false, clientX = null, client
   const wireHit = findWireSegmentAt(w.x, w.y, 8);
   const comp = findCompAt(w.x, w.y);
 
-  if (wireHit && !comp) {
+  if (wireHit && (!comp || (SYMBOLS[comp.type] && SYMBOLS[comp.type].hitBox))) {
     const wr = wireHit.wire;
     if (state.selComps.length > 1 && isWireSelected(wr)) {
       startMultiDrag(w);
